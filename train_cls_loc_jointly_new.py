@@ -1,0 +1,464 @@
+'''
+    将原来的train_cls_loc_jointly.py infer_cls_pml.py整合在一起，
+    这样评估的时候不用再次装载模型，可以节省显存，从而可以设置大一点的batchsize
+'''
+
+import torch
+import numpy as np
+import random
+torch.manual_seed(1234) # cpu
+torch.cuda.manual_seed(1234) #gpu
+np.random.seed(1234) #numpy
+random.seed(1234) #random and transforms
+torch.backends.cudnn.deterministic=True # cudnn
+import cv2
+from torch.utils.data import DataLoader
+import torchvision
+from torchvision import transforms
+import voc12.data
+from tool import pyutils, imutils, torchutils, visualization
+import argparse
+import importlib
+import torch.nn.functional as F
+from tensorboardX import SummaryWriter
+from tqdm import tqdm
+import shutil
+from PIL import Image
+
+
+from evaluation import eval
+
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+
+categories = ['background', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow',
+              'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train',
+              'tvmonitor']
+
+
+def worker_init_fn(worker_id):
+        np.random.seed(1 + worker_id)
+
+
+if __name__ == '__main__':
+    '''
+        !!! 训练和评估是一起执行的，因此训练的时候确定batch_size时要给评估留时间
+        ！！　batch_size和num_worker都要调整
+    '''
+
+    parser = argparse.ArgumentParser()
+    # 机器和环境的不同，会差一两个点
+    parser.add_argument("--batch_size", default=10, type=int)   # 10/12   一个gpu：8×6√  两个gpu：10
+    parser.add_argument("--max_epoches", default=5, type=int)   # 根据机器去修改
+    parser.add_argument("--network", default="network.resnet38_cls_ser_jointly_revised_seperatable", type=str)
+    parser.add_argument("--lr", default=0.05, type=float)
+    parser.add_argument("--num_workers", default=8, type=int)
+    parser.add_argument("--num_workers_infer", default=12, type=int)   # torch.utils.data.dataloader提示建议创建12个workers
+    parser.add_argument("--wt_dec", default=5e-4, type=float)
+
+    # 权重
+    parser.add_argument("--weights", default="/usr/volume/WSSS/weights_released/res38_cls.pth", type=str)
+    # parser.add_argument("--weights", default="/usr/volume/WSSS/weights_released/resnet38_cls_ser_0.3.pth", type=str)
+
+    # 数据集位置
+    parser.add_argument("--voc12_root", default="/usr/volume/WSSS/VOC2012", type=str)
+
+    # 数据集划分文件
+    # parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini_fortest.txt", type=str)   # 测试用的小批的训练数据
+    parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt", type=str)
+    # parser.add_argument("--train_voc_list", "-trvoc", default="/usr/volume/WSSS/WSSS_PML/voc12/train_voc12.txt", type=str)  # 没用到
+    # parser.add_argument("--val_list", default="/usr/volume/WSSS/WSSS_PML/voc12/val.txt", type=str)   # 没用到
+    parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/val_voc12.txt", type=str)  # 跟phase指定的值要一致
+    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini_fortest.txt", type=str)  # 测试用的小批的训练数据
+    parser.add_argument("--tensorboard_img", default="/usr/volume/WSSS/WSSS_PML/voc12/tensorborad_img.txt", type=str)  # 用来生成tf展示的图片
+
+    parser.add_argument("--crop_size", default=448, type=int)
+    parser.add_argument("--optimizer", default='poly', type=str)
+
+    parser.add_argument("--session_name", default="patch_weight-0.05_lr0.05", type=str)         # train val test
+    parser.add_argument("--tblog_dir", default="./saved_checkpoints", type=str)
+    # 模型保存地址：# tblog_dir/session_name/
+    
+    # 评估参数
+    phase = "val"               # 要和infer_list 一致（infer_list指定的文件有包括图片路径和类别，phase指定的文件只包含名称，用于找到指定的cam）
+    bg_thresh=[0.15,0.16,0.17,0.18,0.19,0.20,0.21,0.22,0.23,0.24,0.25,0.26,0.27,0.28,0.29,0.30]
+    crf_alpha = [4, 16, 24, 28, 32]
+    # 指定评估结果输出的文件
+    # parser.add_argument("--out_cam", default="./out_cam_val", type=str)   # 保存每张图片中的每个目标物体类别的CAM
+    parser.add_argument("--out_cam", default=None, type=str)
+    parser.add_argument("--out_crf", default=None, type=str)  # 保存条件随机场修正后的out_cam
+    # parser.add_argument("--out_crf", default="./out_crf", type=str)
+    parser.add_argument("--out_cam_pred", default="./out_cam_pred_val", type=str)  # 保存每张图片中包括背景类的所有类别的CAM
+    parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/WSSS_PML/log_CAM_{phase}.txt", type=str)
+
+    args = parser.parse_args()
+    args.out_cam_pred = "./out_cam_ser_{}".format(args.session_name)
+
+    log_root = f"/usr/volume/WSSS/WSSS_PML/{args.tblog_dir}/{args.session_name}/"
+    os.makedirs(log_root, exist_ok=True)
+    if os.path.exists(log_root):
+        shutil.rmtree(log_root)
+
+    #### train from imagenet params
+    # args.session_name="from_imageNet"
+    # args.weights="/usr/volume/WSSS/WSSS_PML/weights/ilsvrc-cls_rna-a1_cls1000_ep-0001.params"
+    # args.lr=0.1
+    #
+    # args.optimizer="poly"
+    #### train from imagenet params
+
+    model = getattr(importlib.import_module(args.network), 'Net')()
+
+    # tensorboard文件（参数指定的是tensorboard文件的路径）
+    tblogger = SummaryWriter(args.tblog_dir+'log')
+    # 重写并替换了sys.stdout类，重新指定了输出的位置（同时写到终端和指定的文件中）
+    pyutils.Logger(args.session_name + '.log')
+
+    print(vars(args))
+    w, h = [448, 448]
+
+    # dataset
+    train_dataset = voc12.data.VOC12ClsDataset(args.train_list, voc12_root=args.voc12_root,
+                                               transform=transforms.Compose([
+                                                   imutils.RandomResizeLong(448, 768),
+                                                   transforms.RandomHorizontalFlip(),
+                                                   transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3,
+                                                                          hue=0.1),
+                                                   np.asarray,
+                                                   model.normalize,
+                                                   imutils.RandomCrop(args.crop_size),
+                                                   imutils.HWC_to_CHW,
+                                                   torch.from_numpy
+                                               ]))
+
+    train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+                                   shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True,
+                                   worker_init_fn=worker_init_fn)
+
+
+    max_step = (len(train_dataset) // args.batch_size)*args.max_epoches
+
+    tensorboard_dataset = voc12.data.VOC12ClsDataset(args.tensorboard_img, voc12_root=args.voc12_root,
+                                                     transform=transforms.Compose([
+                                                         np.asarray,
+                                                         model.normalize,
+                                                         imutils.CenterCrop(500),
+                                                         imutils.HWC_to_CHW,
+                                                         torch.from_numpy
+                                                     ]))
+    tensorboard_img_loader = DataLoader(tensorboard_dataset,
+                                        shuffle=False, num_workers=args.num_workers, pin_memory=True, drop_last=True)
+
+    infer_dataset = voc12.data.VOC12ClsDatasetMSF(args.infer_list, voc12_root=args.voc12_root,
+                                                scales=[1, 0.5, 1.5, 2.0],
+                                                inter_transform=torchvision.transforms.Compose(
+                                                    [np.asarray,
+                                                    model.normalize,
+                                                    imutils.HWC_to_CHW]))
+
+    infer_data_loader = DataLoader(infer_dataset, shuffle=False, num_workers=args.num_workers_infer, pin_memory=True)
+
+
+    param_groups = model.get_parameter_groups()
+    if args.optimizer=='poly':
+        optimizer = torchutils.PolyOptimizer([
+            {'params': param_groups[0], 'lr': args.lr, 'weight_decay': args.wt_dec},
+            {'params': param_groups[1], 'lr': 2*args.lr, 'weight_decay': 0},
+            {'params': param_groups[2], 'lr': 10*args.lr, 'weight_decay': args.wt_dec},
+            {'params': param_groups[3], 'lr': 20*args.lr, 'weight_decay': 0}
+        ], lr=args.lr, weight_decay=args.wt_dec, max_step=max_step)
+    elif args.optimizer=='adam':
+        optimizer=torchutils.Adam([
+        {'params': param_groups[0], 'lr': args.lr, 'weight_decay': args.wt_dec},
+        {'params': param_groups[1], 'lr': 2*args.lr, 'weight_decay': 0},
+        {'params': param_groups[2], 'lr': 10*args.lr, 'weight_decay': args.wt_dec},
+        {'params': param_groups[3], 'lr': 20*args.lr, 'weight_decay': 0}
+    ], lr=args.lr, weight_decay=args.wt_dec, max_step=max_step)
+
+    if args.weights[-7:] == '.params':
+        assert args.network == "network.resnet38_cls_ser_jointly"
+        import network.resnet38d
+        weights_dict = network.resnet38d.convert_mxnet_to_torch(args.weights)
+    else:
+        weights_dict = torch.load(args.weights)
+
+    model.load_state_dict(weights_dict, strict=False)
+    model=torch.nn.DataParallel(model).cuda()
+
+    model.train()
+
+    avg_meter = pyutils.AverageMeter('loss')
+    avg_meter1 = pyutils.AverageMeter('loss_cls')
+    avg_meter2 = pyutils.AverageMeter('loss_patch')
+
+    timer = pyutils.Timer("Session started: ")
+
+    loss_list=[]
+    validation_set_CAM_mIoU=[]
+    val_loss_list = []
+    train_set_CAM_mIoU = []
+    val_multi_mIoU = []
+    train_multi_mIoU = []
+
+    global_step = 0
+    patch_num = 0
+    max_step_small = 0
+
+    is_opti = True
+
+    is_need_load_proposal_data=False
+    is_init_opti = False
+    train_small_dataset=None
+    train_small_data_loader=None
+    optimizer_patch_cls = None
+
+
+    # training
+    for ep in range(args.max_epoches):
+        itr = ep + 1
+        # log the images at the beginning of each epoch
+        for iter, pack in enumerate(tensorboard_img_loader):
+            tensorboard_img = pack[1]
+            tensorboard_label = pack[2].cuda(non_blocking=True)
+            tensorboard_label = tensorboard_label.unsqueeze(2).unsqueeze(3)
+            N, C, H, W = tensorboard_img.size()
+            img_8 = tensorboard_img[0].numpy().transpose((1, 2, 0))
+            img_8 = np.ascontiguousarray(img_8)  # 将一个内存不连续存储的数组转换为内存连续存储的数组，使得运行速度更快
+            mean = (0.485, 0.456, 0.406)
+            std = (0.229, 0.224, 0.225)
+            img_8[:, :, 0] = (img_8[:, :, 0] * std[0] + mean[0]) * 255
+            img_8[:, :, 1] = (img_8[:, :, 1] * std[1] + mean[1]) * 255
+            img_8[:, :, 2] = (img_8[:, :, 2] * std[2] + mean[2]) * 255
+            img_8[img_8 > 255] = 255
+            img_8[img_8 < 0] = 0
+            img_8 = img_8.astype(np.uint8)
+
+            input_img = img_8.transpose((2, 0, 1))            # tensorboard_img[0] → img_8 → input_img(规范化且内存连续)
+            h = H // 4
+            w = W // 4
+            model.eval()
+            with torch.no_grad():
+                cam = model(tensorboard_img)
+            model.train()
+            # Down samples the input to the given size
+            p = F.interpolate(cam, (h, w), mode='bilinear')[0].detach().cpu().numpy()     
+            bg_score = np.zeros((1, h, w), np.float32)
+            p = np.concatenate((bg_score, p), axis=0)  # 追加背景cam
+            bg_label = np.ones((1, 1, 1), np.float32)
+            l = tensorboard_label[0].detach().cpu().numpy()
+            l = np.concatenate((bg_label, l), axis=0)   # 追加背景标签
+            # Donotunderstand: w, h ？ 
+            image = cv2.resize(img_8, (w, h), interpolation=cv2.INTER_CUBIC).transpose((2, 0, 1))  
+            # 应该是可视化图片
+            CLS, CAM, CLS_crf, CAM_crf = visualization.generate_vis(p, l, image,
+                                                                    func_label2color=visualization.VOClabel2colormap)
+            tblogger.add_image('Image_' + str(iter), input_img, itr)
+            tblogger.add_image('CLS_' + str(iter), CLS, itr)
+            tblogger.add_image('CLS_crf' + str(iter), CLS_crf, itr)
+            tblogger.add_images('CAM_' + str(iter), CAM, itr)
+
+
+            # print("Epoch %s: " % str(ep), "%.2fs" % (timer.get_stage_elapsed()))
+
+            timer.reset_stage()
+
+        for iter, pack in tqdm(enumerate(train_data_loader)):
+
+            name = pack[0]
+            img = pack[1]
+            label = pack[2].cuda(non_blocking=True)
+            label = label.unsqueeze(2).unsqueeze(3)
+            raw_H = pack[3]
+            raw_W = pack[4]
+            pack3 = []
+            param = [w, h, raw_W, raw_H, patch_num]
+
+            optimizer.zero_grad()
+
+            loss_cls, loss_patch = model(x=img, label=label, param=param, is_patch_metric=True, is_sse=False)
+
+            loss_cls=loss_cls.mean()
+
+            loss_patch=loss_patch.mean()
+
+            # # baseline:no metric learning
+            # loss_cls = model(x=img, label=label, param=param, is_patch_metric=False, is_sse=False)[0]
+
+            # loss_cls=loss_cls.mean()
+
+            # loss_patch=torch.tensor(0)
+
+                # loss=loss_cls+loss_patch/20
+                ### 2022
+            # 原本的模型的loss_cls已经训练得很好了,而我们新加的loss_patch的数组较大,所以/10让其变小
+            # 不然数值太大,甚至大了一个数量级会让模型太过专注于这一部分,
+            # 但这属于一个multi task的训练, 我们的整个框架依赖于模型要有一个比较小的loss_cls, 才能持续地输出准确的cam
+            # 因此要将它们两reweight到一个数量级,让模型同时去关注这两个点
+            # 有多个loss的: 最基础的--reweight到同一个数量级,但是具体的表现或者说数值还是得通过实验结果去看(10,20,30都是一个数量级嘛,很多情况)
+            # loss = loss_cls + loss_patch / 1000   # 0.001
+            # loss = loss_cls + loss_patch / 100    # 0.01
+            # loss = loss_cls + loss_patch / 100 * 3   # 0.03
+            loss = loss_cls + loss_patch / 20     # 0.05
+            # loss = loss_cls + loss_patch / 100 * 7   # 0.07
+            # loss = loss_cls + loss_patch / 10     # 0.1
+            avg_meter2.add({'loss_patch': loss_patch.item()})
+
+
+            avg_meter.add({'loss': loss.item()})
+            avg_meter1.add({'loss_cls': loss_cls.item()})
+
+
+            loss.backward()
+            optimizer.step()
+
+            global_step+=1
+
+            # print
+            if (global_step-1)%10 == 0:
+                timer.update_progress(global_step / max_step)
+
+                a=avg_meter.get('loss')
+                loss_list.append(avg_meter.get('loss'))
+
+                print('Iter:%5d/%5d' % (global_step - 1, max_step),
+                      'Loss_cls: %.4f' % (avg_meter.get('loss')),
+                      'Loss_cls: %.4f:'%(avg_meter1.get('loss_cls')),
+                      'Loss_patch: %.4f:' % (avg_meter2.get('loss_patch')),
+                      'imps:%.3f' % ((iter+1) * args.batch_size / timer.get_stage_elapsed()),
+                      'Fin:%s' % (timer.str_est_finish()),
+                      'lr: %.6f' % (optimizer.param_groups[0]['lr']), flush=True)
+                avg_meter.pop()
+
+        print(f"epoch{ep} end!!!!!!!!!!!!!!!!!!!")
+        if args.optimizer=='adam':
+            optimizer.adam_turn_step()
+
+        # 每个epoch保存模型
+        model_saved_root=f"/usr/volume/WSSS/WSSS_PML/{args.tblog_dir}/{args.session_name}/"
+        os.makedirs(model_saved_root, exist_ok=True)
+        model_saved_dir = os.path.join(model_saved_root, f"{ep}ep.pth")
+        torch.save(model.module.state_dict(),model_saved_dir)
+
+        avg_meter.pop()
+
+        # evaluation
+
+        loss_dict = {'loss': loss_list[-1]}
+        tblogger.add_scalars('cls_loss', loss_dict, itr)
+        tblogger.add_scalar('cls_lr', optimizer.param_groups[0]['lr'], itr)
+
+        # tensorboard log vis images
+
+
+        # eval
+        # os.system(f"/opt/conda/envs/torch-python37/bin/python infer_cls_pml.py --log_infer_cls {result_saved_dir}.txt --weights {model_saved_dir} --out_cam_pred ./out_cam_ser_{args.session_name}")
+        result_saved_dir=os.path.join(f"{log_root}/log_txt/", f"{args.session_name}_{ep}")
+        os.makedirs(f"{log_root}/log_txt/", exist_ok=True)
+        args.log_infer_cls = result_saved_dir
+
+        model.eval()
+        # 用当前的模型计算出cam和crf修正后的cam，同时对cam进行评估，评估结果输出到log_infer_cls中
+        # 由于cam很多，因此每个epoch生成的cam会覆盖之前的
+        # makedir stuff ================================================================
+        if args.out_cam_pred is not None:   # 
+            if os.path.exists(args.out_cam_pred):
+                shutil.rmtree(args.out_cam_pred)
+            if not os.path.exists(args.out_cam_pred):
+                os.makedirs(args.out_cam_pred)
+            for background_threshold in bg_thresh:
+                os.makedirs(f"{args.out_cam_pred}/{background_threshold}", exist_ok=True)
+
+        if args.out_cam is not None:
+            if os.path.exists(args.out_cam):
+                shutil.rmtree(args.out_cam)
+            if not os.path.exists(args.out_cam):
+                os.makedirs(args.out_cam)
+
+        if args.out_crf is not None:
+            if os.path.exists(args.out_crf):
+                shutil.rmtree(args.out_crf)
+            for t in crf_alpha:
+                folder = args.out_crf + ('_%.1f' % t)
+                if not os.path.exists(folder):
+                    os.makedirs(folder)
+        # ==============================================================================
+
+        n_gpus = torch.cuda.device_count()
+        for iter, (img_name, img_list, label) in enumerate(infer_data_loader):
+            img_name = img_name[0]; label = label[0]
+
+            if args.out_cam is not None:
+                if os.path.exists(os.path.join(args.out_cam, img_name + '.npy')):
+                    continue
+
+            img_path = voc12.data.get_img_path(img_name, args.voc12_root)
+            orig_img = np.asarray(Image.open(img_path))
+            orig_img_size = orig_img.shape[:2]
+
+            def _work(i, img):
+                with torch.no_grad():
+                    with torch.cuda.device(i%n_gpus):
+                        cam = model(img.cuda())
+                        # print(cam)
+                        cam = F.relu(cam, inplace=True)
+                        cam = F.interpolate(cam, orig_img_size, mode='bilinear', align_corners=False)[0]
+                        cam = cam.cpu().numpy() * label.clone().view(20, 1, 1).numpy()
+                        if i % 2 == 1:
+                            cam = np.flip(cam, axis=-1)
+                        return cam
+
+            thread_pool = pyutils.BatchThreader(_work, list(enumerate(img_list)),
+                                                batch_size=8, prefetch_size=0, processes=args.num_workers_infer)
+
+            cam_list = thread_pool.pop_results()
+
+            sum_cam = np.sum(cam_list, axis=0)
+            norm_cam = sum_cam / (np.max(sum_cam, (1, 2), keepdims=True) + 1e-5)   # 使得每张图片的每张cam的激活值位于[0,1]
+
+            cam_dict = {}
+            for i in range(20):
+                if label[i] > 1e-5:
+                    cam_dict[i] = norm_cam[i]
+
+            if args.out_cam is not None:  # 部分CAM
+                np.save(os.path.join(args.out_cam, img_name + '.npy'), cam_dict)
+
+            if args.out_cam_pred is not None:   # 全部CAMs的图
+                for background_threshold in bg_thresh:
+                    bg_score = [np.ones_like(norm_cam[0])*background_threshold]  
+                    pred = np.argmax(np.concatenate((bg_score, norm_cam)), 0)
+                    cv2.imwrite(os.path.join(f"{args.out_cam_pred}/{background_threshold}", img_name + '.png'), pred.astype(np.uint8))
+
+            def _crf_with_alpha(cam_dict, alpha):
+                v = np.array(list(cam_dict.values()))
+                bg_score = np.power(1 - np.max(v, axis=0, keepdims=True), alpha)
+                bgcam_score = np.concatenate((bg_score, v), axis=0)
+                crf_score = imutils.crf_inference(orig_img, bgcam_score, labels=bgcam_score.shape[0])
+
+                n_crf_al = dict()
+
+                n_crf_al[0] = crf_score[0]
+                for i, key in enumerate(cam_dict.keys()):
+                    n_crf_al[key+1] = crf_score[i+1]
+
+                return n_crf_al
+
+            if args.out_crf is not None:
+                for t in crf_alpha:
+                    crf = _crf_with_alpha(cam_dict, t)
+                    folder = args.out_crf + ('_%.1f'%t)
+                    # if not os.path.exists(folder):
+                    #     os.makedirs(folder)
+                    np.save(os.path.join(folder, img_name + '.npy'), crf)
+            if iter%10==0:
+                print(iter)
+
+        for background_threshold in bg_thresh:
+            if args.out_cam_pred is not None:
+                print(f"background threshold is {background_threshold}")
+                eval(f"/usr/volume/WSSS/WSSS_PML/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, model_name=args.weights)
+                # 测试用的小批量数据
+                # eval("/usr/volume/WSSS/WSSS_PML/voc12/train_mini_fortest.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, model_name=args.weights)
+
+    # np.save('loss.npy', loss_list)
+    # np.save('validation_set_CAM_mIoU.npy', validation_set_CAM_mIoU)
