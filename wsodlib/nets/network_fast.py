@@ -5,9 +5,9 @@
 # Modified by Jiajie Wang for ws-Faster-rcnn
 
 # --------------------------------------------------------
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+# from __future__ import absolute_import
+# from __future__ import division
+# from __future__ import print_function
 
 import math
 from typing import Dict, Any
@@ -38,7 +38,7 @@ from model.config import cfg
 
 import tensorboardX as tb
 
-from scipy.misc import imresize
+# from scipy.misc import imresize
 
 
 class Network_Fast(nn.Module):
@@ -50,7 +50,8 @@ class Network_Fast(nn.Module):
         self._losses = {}
         self._anchor_targets = {}
         self._proposal_targets = {}
-        self._layers = {}
+        # self._layers = {}
+        self._layers = nn.ModuleDict()
         self._gt_image = None
         self._act_summaries = {}
         self._score_summaries = {}
@@ -59,21 +60,21 @@ class Network_Fast(nn.Module):
         self._variables_to_fix = {}
         self._device = 'cuda'
 
-    def _add_gt_image(self):
-        # add back mean
-        image = self._image_gt_summaries['image'] + cfg.PIXEL_MEANS
-        image = imresize(image[0], self._im_info[:2] / self._im_info[2])
-        # BGR to RGB (opencv uses BGR)
-        self._gt_image = image[np.newaxis, :, :, ::-1].copy(order='C')
+    # def _add_gt_image(self):
+    #     # add back mean
+    #     image = self._image_gt_summaries['image'] + cfg.PIXEL_MEANS
+    #     image = imresize(image[0], self._im_info[:2] / self._im_info[2])
+    #     # BGR to RGB (opencv uses BGR)
+    #     self._gt_image = image[np.newaxis, :, :, ::-1].copy(order='C')
 
-    def _add_gt_image_summary(self):
-        # use a customized visualization function to visualize the boxes
-        self._add_gt_image()
-        image = draw_bounding_boxes( \
-            self._gt_image, self._image_gt_summaries['gt_boxes'], self._image_gt_summaries['im_info'])
+    # def _add_gt_image_summary(self):
+    #     # use a customized visualization function to visualize the boxes
+    #     self._add_gt_image()
+    #     image = draw_bounding_boxes( \
+    #         self._gt_image, self._image_gt_summaries['gt_boxes'], self._image_gt_summaries['im_info'])
 
-        return tb.summary.image('GROUND_TRUTH',
-                                image[0].astype('float32') / 255.0, dataformats='HWC')
+    #     return tb.summary.image('GROUND_TRUTH',
+    #                             image[0].astype('float32') / 255.0, dataformats='HWC')
 
     def _add_act_summary(self, key, tensor):
         return tb.summary.histogram(
@@ -109,7 +110,9 @@ class Network_Fast(nn.Module):
                        1.0 / 16.0)(bottom, rois)
 
     def _roi_align_layer(self, bottom, rois):
-        return RoIAlign((cfg.POOLING_SIZE, cfg.POOLING_SIZE), 1.0 / 16.0,
+        # return RoIAlign((cfg.POOLING_SIZE, cfg.POOLING_SIZE), 1.0 / 16.0,
+        #                 0)(bottom, rois)
+        return RoIAlign((cfg.POOLING_SIZE, cfg.POOLING_SIZE), 1.0 / 8.0,
                         0)(bottom, rois)
 
     def _anchor_target_layer(self, rpn_cls_score):
@@ -368,34 +371,34 @@ class Network_Fast(nn.Module):
 
         self.init_weights()
 
-    def _run_summary_op(self, val=False):
-        """
-        Run the summary operator: feed the placeholders with corresponding newtork outputs(activations)
-        """
-        summaries = []
-        # Add image gt
-        summaries.append(self._add_gt_image_summary())
-        # Add event_summaries
-        for key, var in self._event_summaries.items():
-            summaries.append(tb.summary.scalar(key, var.item()))
-        self._event_summaries = {}
-        if not val:
-            # Add score summaries
-            for key, var in self._score_summaries.items():
-                summaries.append(self._add_score_summary(key, var))
-            self._score_summaries = {}
-            # Add act summaries
-            for key, var in self._act_summaries.items():
-                summaries += self._add_act_summary(key, var)
-            self._act_summaries = {}
-            # Add train summaries
-            for k, var in dict(self.named_parameters()).items():
-                if var.requires_grad:
-                    summaries.append(self._add_train_summary(k, var))
+    # def _run_summary_op(self, val=False):
+    #     """
+    #     Run the summary operator: feed the placeholders with corresponding newtork outputs(activations)
+    #     """
+    #     summaries = []
+    #     # Add image gt
+    #     summaries.append(self._add_gt_image_summary())
+    #     # Add event_summaries
+    #     for key, var in self._event_summaries.items():
+    #         summaries.append(tb.summary.scalar(key, var.item()))
+    #     self._event_summaries = {}
+    #     if not val:
+    #         # Add score summaries
+    #         for key, var in self._score_summaries.items():
+    #             summaries.append(self._add_score_summary(key, var))
+    #         self._score_summaries = {}
+    #         # Add act summaries
+    #         for key, var in self._act_summaries.items():
+    #             summaries += self._add_act_summary(key, var)
+    #         self._act_summaries = {}
+    #         # Add train summaries
+    #         for k, var in dict(self.named_parameters()).items():
+    #             if var.requires_grad:
+    #                 summaries.append(self._add_train_summary(k, var))
 
-            self._image_gt_summaries = {}
+    #         self._image_gt_summaries = {}
 
-        return summaries
+    #     return summaries
 
     def _predict(self):
         # This is just _build_network in tf-faster-rcnn
@@ -422,6 +425,26 @@ class Network_Fast(nn.Module):
 
         return rois, cls_prob, bbox_pred
 
+    def inference_step(self, img, rois=None, fix=True):
+        if fix:
+            self._image = img.unsqueeze(0)   # shape: torch.Size([3, 448, 448])
+            # self._image = Variable(torch.from_numpy(self._image.transpose([0, 3, 1, 2])).cuda())
+            # self._image = self._image.unsqueeze(0)
+            net_conv = self._image_to_head()    # shape: torch.Size([1, 1024, 75, 100])
+            rois=rois.to("cuda")
+            if cfg.TEACHER.POOLING_MODE == 'align':
+                pool5 = self._roi_align_layer(net_conv, rois) # shape: torch.Size([16, 1024, 7, 7])
+            else:
+                pool5 = self._roi_pool_layer(net_conv, rois)
+            fc7 = self._head_to_tail(pool5)         #shape:　torch.Size([16, 2048])
+            cls_prob, bbox_pred = self._region_classification(fc7)
+            return rois, cls_prob, bbox_pred
+        # else:
+        #     self.forward(blobs['data'], blobs['im_info'], blobs['boxes'])
+        #     total_loss = self._losses['total_loss']
+        #     return total_loss
+
+    '''
     def inference_step(self, blobs, rois=None, fix=True):
         if fix:
             self._image, im_info = blobs['data'], blobs['im_info']
@@ -438,6 +461,7 @@ class Network_Fast(nn.Module):
             self.forward(blobs['data'], blobs['im_info'], blobs['boxes'])
             total_loss = self._losses['total_loss']
             return total_loss
+    '''
 
     def inference(self, image, im_info, rois, mode='TEST'):
         self._image_gt_summaries['image'] = image
@@ -531,13 +555,13 @@ class Network_Fast(nn.Module):
             for k in list(d):
                 del d[k]
 
-    def get_summary(self, blobs):
-        self.eval()
-        self.forward(blobs['data'], blobs['im_info'], blobs['gt_boxes'])
-        self.train()
-        summary = self._run_summary_op(True)
+    # def get_summary(self, blobs):
+    #     self.eval()
+    #     self.forward(blobs['data'], blobs['im_info'], blobs['gt_boxes'])
+    #     self.train()
+    #     summary = self._run_summary_op(True)
 
-        return summary
+    #     return summary
 
     def train_step(self, blobs, train_op):
         self.forward(blobs['data'], blobs['im_info'], blobs['gt_boxes'])
@@ -556,21 +580,21 @@ class Network_Fast(nn.Module):
 
         return rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, loss
 
-    def train_step_with_summary(self, blobs, train_op):
-        self.forward(blobs['data'], blobs['im_info'], blobs['gt_boxes'])
-        rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, loss = self._losses["rpn_cross_entropy"].item(), \
-                                                               self._losses['rpn_loss_box'].item(), \
-                                                               self._losses['cross_entropy'].item(), \
-                                                               self._losses['loss_box'].item(), \
-                                                               self._losses['total_loss'].item()
-        train_op.zero_grad()
-        self._losses['total_loss'].backward()
-        train_op.step()
-        summary = self._run_summary_op()
+    # def train_step_with_summary(self, blobs, train_op):
+    #     self.forward(blobs['data'], blobs['im_info'], blobs['gt_boxes'])
+    #     rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, loss = self._losses["rpn_cross_entropy"].item(), \
+    #                                                            self._losses['rpn_loss_box'].item(), \
+    #                                                            self._losses['cross_entropy'].item(), \
+    #                                                            self._losses['loss_box'].item(), \
+    #                                                            self._losses['total_loss'].item()
+    #     train_op.zero_grad()
+    #     self._losses['total_loss'].backward()
+    #     train_op.step()
+    #     summary = self._run_summary_op()
 
-        self.delete_intermediate_states()
+    #     self.delete_intermediate_states()
 
-        return rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, loss, summary
+    #     return rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, loss, summary
 
     def train_step_no_return(self, blobs, train_op):
         self.forward(blobs['data'], blobs['im_info'], blobs['gt_boxes'])

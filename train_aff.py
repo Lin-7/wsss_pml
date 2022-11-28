@@ -31,7 +31,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--crop_size", default=448, type=int)
     parser.add_argument("--weights", default="/home/chenkeke/project/WSSS/weights_released/ilsvrc-cls_rna-a1_cls1000_ep-0001.params", type=str)
-    parser.add_argument("--voc12_root", default='/usr/volume/WSSS/VOC2012', type=str)
+    parser.add_argument("--voc12_root", default='/usr/volume/WSSS/VOCdevkit/VOC2012', type=str)
     parser.add_argument("--la_crf_dir", default="./out_crf_4.0", type=str)
     parser.add_argument("--ha_crf_dir", default="./out_crf_24.0", type=str)
 

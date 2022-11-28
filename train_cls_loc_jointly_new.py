@@ -3,6 +3,23 @@
     这样评估的时候不用再次装载模型，可以节省显存，从而可以设置大一点的batchsize
 '''
 
+import os
+import sys
+import os.path as osp
+
+def add_path(path):
+    if path not in sys.path:
+        sys.path.insert(0, path)
+
+this_dir = osp.dirname(__file__)
+# Add lib to PYTHONPATH
+# # begin WSOD config
+# lib_path = osp.join(this_dir, 'wsodlib')
+# add_path(lib_path)
+# # end WSOD
+# lib_path = osp.join(this_dir, 'src/pydensecrf')
+# add_path(lib_path)
+
 import torch
 import numpy as np
 import random
@@ -15,20 +32,20 @@ import cv2
 from torch.utils.data import DataLoader
 import torchvision
 from torchvision import transforms
-import voc12.data
-from tool import pyutils, imutils, torchutils, visualization
-import argparse
-import importlib
 import torch.nn.functional as F
 from tensorboardX import SummaryWriter
-from tqdm import tqdm
+import argparse
+import importlib
+import time
 import shutil
+from tqdm import tqdm
 from PIL import Image
 
-
 from evaluation import eval
+import voc12.data
+from tool import pyutils, imutils, torchutils, visualization
 
-import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 categories = ['background', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow',
@@ -49,9 +66,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # 机器和环境的不同，会差一两个点
     parser.add_argument("--batch_size", default=10, type=int)   # 10/12   一个gpu：8×6√  两个gpu：10
-    parser.add_argument("--max_epoches", default=5, type=int)   # 根据机器去修改
+    parser.add_argument("--max_epoches", default=3, type=int)   # 根据机器去修改
     parser.add_argument("--network", default="network.resnet38_cls_ser_jointly_revised_seperatable", type=str)
-    parser.add_argument("--lr", default=0.05, type=float)
+    parser.add_argument("--lr", default=0.01, type=float)
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--num_workers_infer", default=12, type=int)   # torch.utils.data.dataloader提示建议创建12个workers
     parser.add_argument("--wt_dec", default=5e-4, type=float)
@@ -61,13 +78,11 @@ if __name__ == '__main__':
     # parser.add_argument("--weights", default="/usr/volume/WSSS/weights_released/resnet38_cls_ser_0.3.pth", type=str)
 
     # 数据集位置
-    parser.add_argument("--voc12_root", default="/usr/volume/WSSS/VOC2012", type=str)
+    parser.add_argument("--voc12_root", default="/usr/volume/WSSS/VOCdevkit/VOC2012", type=str)
 
     # 数据集划分文件
     # parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini_fortest.txt", type=str)   # 测试用的小批的训练数据
     parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt", type=str)
-    # parser.add_argument("--train_voc_list", "-trvoc", default="/usr/volume/WSSS/WSSS_PML/voc12/train_voc12.txt", type=str)  # 没用到
-    # parser.add_argument("--val_list", default="/usr/volume/WSSS/WSSS_PML/voc12/val.txt", type=str)   # 没用到
     parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/val_voc12.txt", type=str)  # 跟phase指定的值要一致
     # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini_fortest.txt", type=str)  # 测试用的小批的训练数据
     parser.add_argument("--tensorboard_img", default="/usr/volume/WSSS/WSSS_PML/voc12/tensorborad_img.txt", type=str)  # 用来生成tf展示的图片
@@ -75,9 +90,11 @@ if __name__ == '__main__':
     parser.add_argument("--crop_size", default=448, type=int)
     parser.add_argument("--optimizer", default='poly', type=str)
 
-    parser.add_argument("--session_name", default="patch_weight-0.05_lr0.05", type=str)         # train val test
-    parser.add_argument("--tblog_dir", default="./saved_checkpoints", type=str)
-    # 模型保存地址：# tblog_dir/session_name/
+    # parser.add_argument("--session_name", default="test123", type=str)         # train val test
+    # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-randompatch-fgmid0.5-noNMS", type=str)         # train val test
+    parser.add_argument("--session_name", default="e3-patch_weight0.05-all-patchscale4-fgback0.3", type=str)         # train val test
+    patch_loss_weight = 0.05
+    parser.add_argument("--tblog", default="saved_checkpoints", type=str)
     
     # 评估参数
     phase = "val"               # 要和infer_list 一致（infer_list指定的文件有包括图片路径和类别，phase指定的文件只包含名称，用于找到指定的cam）
@@ -88,16 +105,48 @@ if __name__ == '__main__':
     parser.add_argument("--out_cam", default=None, type=str)
     parser.add_argument("--out_crf", default=None, type=str)  # 保存条件随机场修正后的out_cam
     # parser.add_argument("--out_crf", default="./out_crf", type=str)
-    parser.add_argument("--out_cam_pred", default="./out_cam_pred_val", type=str)  # 保存每张图片中包括背景类的所有类别的CAM
-    parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/WSSS_PML/log_CAM_{phase}.txt", type=str)
+    # parser.add_argument("--out_cam_pred", default="./out_cam_pred_val", type=str)  # 保存每张图片中包括背景类的所有类别的CAM
+    # parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/WSSS_PML/log_CAM_{phase}.txt", type=str)
 
     args = parser.parse_args()
-    args.out_cam_pred = "./out_cam_ser_{}".format(args.session_name)
 
-    log_root = f"/usr/volume/WSSS/WSSS_PML/{args.tblog_dir}/{args.session_name}/"
-    os.makedirs(log_root, exist_ok=True)
+    # 存放结果的根目录
+    out_root = f"/usr/volume/WSSS/WSSS_PML/result/{args.session_name}/"
+    if os.path.exists(out_root):
+        shutil.rmtree(out_root)
+    os.makedirs(out_root, exist_ok=True)
+
+    # 存放模型和模型评估结果的目录
+    log_root = out_root + f"{args.tblog}/"
     if os.path.exists(log_root):
         shutil.rmtree(log_root)
+    os.makedirs(log_root, exist_ok=True)
+
+    # 存放模型对验证集基于cam的预测结果的目录
+    out_cam_pred_dir = out_root + "out_cam_pre"
+    if os.path.exists(out_cam_pred_dir):
+        shutil.rmtree(out_cam_pred_dir)
+    os.makedirs(out_cam_pred_dir, exist_ok=True)
+
+    # 存放验证集对应的cams的目录
+    out_cam = out_root + "out_cams"
+    if os.path.exists(out_cam):
+        shutil.rmtree(out_cam)
+    os.makedirs(out_cam, exist_ok=True)
+
+    # 存放可视化图的目录
+    args.visualize_patch_dir = out_root + 'visualization'
+    if os.path.exists(args.visualize_patch_dir):
+        shutil.rmtree(args.visualize_patch_dir)
+    os.makedirs(args.visualize_patch_dir, exist_ok=True)
+
+
+    # 复制主要运行文件
+    copy_files_list = ['/usr/volume/WSSS/WSSS_PML/train_cls_loc_jointly_new.py', 
+                        '/usr/volume/WSSS/WSSS_PML/network/resnet38_cls_ser_jointly_revised_seperatable.py',
+                        '/usr/volume/WSSS/WSSS_PML/tool/RoiPooling_Jointly.py']
+    for copy_file in copy_files_list:
+        shutil.copy(copy_file, out_root)
 
     #### train from imagenet params
     # args.session_name="from_imageNet"
@@ -109,27 +158,37 @@ if __name__ == '__main__':
 
     model = getattr(importlib.import_module(args.network), 'Net')()
 
-    # tensorboard文件（参数指定的是tensorboard文件的路径）
-    tblogger = SummaryWriter(args.tblog_dir+'log')
+    # 存放模型训练过程数据记录的目录（参数指定的是tensorboard文件的路径）
+    tblogger = SummaryWriter(out_root + args.tblog+'log')
+    # 训练日志文件
     # 重写并替换了sys.stdout类，重新指定了输出的位置（同时写到终端和指定的文件中）
-    pyutils.Logger(args.session_name + '.log')
+    pyutils.Logger(out_root + args.session_name + '.log')
 
     print(vars(args))
-    w, h = [448, 448]
 
     # dataset
     train_dataset = voc12.data.VOC12ClsDataset(args.train_list, voc12_root=args.voc12_root,
                                                transform=transforms.Compose([
-                                                   imutils.RandomResizeLong(448, 768),
+                                                   imutils.RandomResizeLong(448, 768),   # 随机将长边resize到448-768之间的值，短边自适应
                                                    transforms.RandomHorizontalFlip(),
                                                    transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3,
                                                                           hue=0.1),
                                                    np.asarray,
                                                    model.normalize,
-                                                   imutils.RandomCrop(args.crop_size),
+                                                   imutils.RandomCrop(args.crop_size),   # 随机裁剪出448*448
                                                    imutils.HWC_to_CHW,
                                                    torch.from_numpy
                                                ]))
+
+    # train_dataset = voc12.data.VOC12ClsDataset(args.train_list, voc12_root=args.voc12_root,
+    #                                         transform=transforms.Compose([
+    #                 imutils.ResizeImage(448, 448),
+    #                 transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
+    #                 np.asarray,
+    #                 model.normalize,
+    #                 imutils.HWC_to_CHW,
+    #                 torch.from_numpy
+    #             ]))
 
     train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                                    shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True,
@@ -155,7 +214,6 @@ if __name__ == '__main__':
                                                     [np.asarray,
                                                     model.normalize,
                                                     imutils.HWC_to_CHW]))
-
     infer_data_loader = DataLoader(infer_dataset, shuffle=False, num_workers=args.num_workers_infer, pin_memory=True)
 
 
@@ -212,11 +270,14 @@ if __name__ == '__main__':
     train_small_data_loader=None
     optimizer_patch_cls = None
 
-
+    bounding_box_dict = np.load('voc12/bounding_box.npy', allow_pickle=True).item()
+    rw, rh = [448, 448]
+    
     # training
     for ep in range(args.max_epoches):
         itr = ep + 1
         # log the images at the beginning of each epoch
+        
         for iter, pack in enumerate(tensorboard_img_loader):
             tensorboard_img = pack[1]
             tensorboard_label = pack[2].cuda(non_blocking=True)
@@ -248,7 +309,7 @@ if __name__ == '__main__':
             l = tensorboard_label[0].detach().cpu().numpy()
             l = np.concatenate((bg_label, l), axis=0)   # 追加背景标签
             # Donotunderstand: w, h ？ 
-            image = cv2.resize(img_8, (w, h), interpolation=cv2.INTER_CUBIC).transpose((2, 0, 1))  
+            image = cv2.resize(img_8, (w, h), interpolation=cv2.INTER_CUBIC).transpose((2, 0, 1))   # chw
             # 应该是可视化图片
             CLS, CAM, CLS_crf, CAM_crf = visualization.generate_vis(p, l, image,
                                                                     func_label2color=visualization.VOClabel2colormap)
@@ -261,7 +322,12 @@ if __name__ == '__main__':
             # print("Epoch %s: " % str(ep), "%.2fs" % (timer.get_stage_elapsed()))
 
             timer.reset_stage()
-
+ 
+        patches = []
+        p_labels = []
+        p_masks = []
+        # visualize_iter_idxs = np.random.choice(range(ep*len(train_dataset), (ep+1)*len(train_dataset)), 10, replace=False) # 可视化前随机5个iter
+        visualize_iter_idxs = range(0, len(train_dataset))[:10] # 可视化前10个iter
         for iter, pack in tqdm(enumerate(train_data_loader)):
 
             name = pack[0]
@@ -271,11 +337,26 @@ if __name__ == '__main__':
             raw_H = pack[3]
             raw_W = pack[4]
             pack3 = []
-            param = [w, h, raw_W, raw_H, patch_num]
+            param = [rw, rh, raw_W, raw_H, patch_num]
+            bounding_box = []
+            
+            for i in range(args.batch_size):
+                bounding_box.append(bounding_box_dict[str(name[i])])
 
             optimizer.zero_grad()
 
-            loss_cls, loss_patch = model(x=img, label=label, param=param, is_patch_metric=True, is_sse=False)
+            
+            if iter in visualize_iter_idxs:
+                # visualize patches
+                loss_cls, loss_patch, patch_embs, patch_labels, patch_mask \
+                 = model(x=img, label=label, bounding_box=bounding_box, param=param, is_patch_metric=True, is_sse=False, epoch_iter=f"{ep}_{iter}", img_names=name, args=args)
+            else:
+                loss_cls, loss_patch, patch_embs, patch_labels, patch_mask \
+                 = model(x=img, label=label, bounding_box=bounding_box, param=param, is_patch_metric=True, is_sse=False, img_names=name)
+            
+            patches.extend(patch_embs.detach().cpu())
+            p_labels.extend(patch_labels.cpu())
+            p_masks.extend(patch_mask.cpu())
 
             loss_cls=loss_cls.mean()
 
@@ -283,11 +364,8 @@ if __name__ == '__main__':
 
             # # baseline:no metric learning
             # loss_cls = model(x=img, label=label, param=param, is_patch_metric=False, is_sse=False)[0]
-
             # loss_cls=loss_cls.mean()
-
             # loss_patch=torch.tensor(0)
-
                 # loss=loss_cls+loss_patch/20
                 ### 2022
             # 原本的模型的loss_cls已经训练得很好了,而我们新加的loss_patch的数组较大,所以/10让其变小
@@ -295,18 +373,11 @@ if __name__ == '__main__':
             # 但这属于一个multi task的训练, 我们的整个框架依赖于模型要有一个比较小的loss_cls, 才能持续地输出准确的cam
             # 因此要将它们两reweight到一个数量级,让模型同时去关注这两个点
             # 有多个loss的: 最基础的--reweight到同一个数量级,但是具体的表现或者说数值还是得通过实验结果去看(10,20,30都是一个数量级嘛,很多情况)
-            # loss = loss_cls + loss_patch / 1000   # 0.001
-            # loss = loss_cls + loss_patch / 100    # 0.01
-            # loss = loss_cls + loss_patch / 100 * 3   # 0.03
-            loss = loss_cls + loss_patch / 20     # 0.05
-            # loss = loss_cls + loss_patch / 100 * 7   # 0.07
-            # loss = loss_cls + loss_patch / 10     # 0.1
+            loss = loss_cls + loss_patch * patch_loss_weight
+            # loss = loss_cls
             avg_meter2.add({'loss_patch': loss_patch.item()})
-
-
             avg_meter.add({'loss': loss.item()})
             avg_meter1.add({'loss_cls': loss_cls.item()})
-
 
             loss.backward()
             optimizer.step()
@@ -328,13 +399,16 @@ if __name__ == '__main__':
                       'Fin:%s' % (timer.str_est_finish()),
                       'lr: %.6f' % (optimizer.param_groups[0]['lr']), flush=True)
                 avg_meter.pop()
-
+            
         print(f"epoch{ep} end!!!!!!!!!!!!!!!!!!!")
         if args.optimizer=='adam':
             optimizer.adam_turn_step()
 
+        # 可视化所有patch的特征分布，所选择的patch，构造triplet的patch
+        visualization.visualize_patch(patches=torch.stack(patches).numpy(), patch_labels=torch.stack(p_labels).numpy(), patch_mask=torch.stack(p_masks).numpy(), save_dir=args.visualize_patch_dir, epoch=ep)
+
         # 每个epoch保存模型
-        model_saved_root=f"/usr/volume/WSSS/WSSS_PML/{args.tblog_dir}/{args.session_name}/"
+        model_saved_root=log_root
         os.makedirs(model_saved_root, exist_ok=True)
         model_saved_dir = os.path.join(model_saved_root, f"{ep}ep.pth")
         torch.save(model.module.state_dict(),model_saved_dir)
@@ -347,20 +421,20 @@ if __name__ == '__main__':
         tblogger.add_scalars('cls_loss', loss_dict, itr)
         tblogger.add_scalar('cls_lr', optimizer.param_groups[0]['lr'], itr)
 
-        # tensorboard log vis images
-
-
         # eval
         # os.system(f"/opt/conda/envs/torch-python37/bin/python infer_cls_pml.py --log_infer_cls {result_saved_dir}.txt --weights {model_saved_dir} --out_cam_pred ./out_cam_ser_{args.session_name}")
         result_saved_dir=os.path.join(f"{log_root}/log_txt/", f"{args.session_name}_{ep}")
         os.makedirs(f"{log_root}/log_txt/", exist_ok=True)
         args.log_infer_cls = result_saved_dir
+        result_saved_dir_detail=os.path.join(f"{log_root}/log_txt/", f"detail_{args.session_name}_{ep}")
+        args.log_infer_cls_detail = result_saved_dir_detail
 
         model.eval()
         # 用当前的模型计算出cam和crf修正后的cam，同时对cam进行评估，评估结果输出到log_infer_cls中
         # 由于cam很多，因此每个epoch生成的cam会覆盖之前的
         # makedir stuff ================================================================
-        if args.out_cam_pred is not None:   # 
+        if out_cam_pred_dir is not None:   # 
+            args.out_cam_pred = f"{out_cam_pred_dir}/epoch{ep}"
             if os.path.exists(args.out_cam_pred):
                 shutil.rmtree(args.out_cam_pred)
             if not os.path.exists(args.out_cam_pred):
@@ -368,7 +442,9 @@ if __name__ == '__main__':
             for background_threshold in bg_thresh:
                 os.makedirs(f"{args.out_cam_pred}/{background_threshold}", exist_ok=True)
 
-        if args.out_cam is not None:
+        if out_cam is not None:
+            # args.out_cam = f"{out_cam}/epoch{ep}"
+            args.out_cam = f"{out_cam}"
             if os.path.exists(args.out_cam):
                 shutil.rmtree(args.out_cam)
             if not os.path.exists(args.out_cam):
@@ -386,10 +462,6 @@ if __name__ == '__main__':
         n_gpus = torch.cuda.device_count()
         for iter, (img_name, img_list, label) in enumerate(infer_data_loader):
             img_name = img_name[0]; label = label[0]
-
-            if args.out_cam is not None:
-                if os.path.exists(os.path.join(args.out_cam, img_name + '.npy')):
-                    continue
 
             img_path = voc12.data.get_img_path(img_name, args.voc12_root)
             orig_img = np.asarray(Image.open(img_path))
@@ -423,7 +495,7 @@ if __name__ == '__main__':
             if args.out_cam is not None:  # 部分CAM
                 np.save(os.path.join(args.out_cam, img_name + '.npy'), cam_dict)
 
-            if args.out_cam_pred is not None:   # 全部CAMs的图
+            if args.out_cam_pred is not None:   # 根据cams的预测结果
                 for background_threshold in bg_thresh:
                     bg_score = [np.ones_like(norm_cam[0])*background_threshold]  
                     pred = np.argmax(np.concatenate((bg_score, norm_cam)), 0)
@@ -456,9 +528,20 @@ if __name__ == '__main__':
         for background_threshold in bg_thresh:
             if args.out_cam_pred is not None:
                 print(f"background threshold is {background_threshold}")
-                eval(f"/usr/volume/WSSS/WSSS_PML/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, model_name=args.weights)
-                # 测试用的小批量数据
-                # eval("/usr/volume/WSSS/WSSS_PML/voc12/train_mini_fortest.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, model_name=args.weights)
+                
+                visualize_dir=args.visualize_patch_dir+f"/epoch{ep}"
+                if not os.path.exists(visualize_dir):
+                    os.mkdir(visualize_dir)
+                visualize_dir=visualize_dir+f"/bg_thres_{background_threshold}"
+                if not os.path.exists(visualize_dir):
+                    os.mkdir(visualize_dir)
 
-    # np.save('loss.npy', loss_list)
-    # np.save('validation_set_CAM_mIoU.npy', validation_set_CAM_mIoU)
+                eval(f"/usr/volume/WSSS/WSSS_PML/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
+                    detail_txt=args.log_infer_cls_detail, visualize_dir=visualize_dir, cams_dir=args.out_cam, \
+                        model_name=args.weights, bg_threshold=background_threshold)
+                # 测试用的小批量数据
+                # eval(f"/usr/volume/WSSS/WSSS_PML/voc12/train_mini_fortest.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
+                #     detail_txt=args.log_infer_cls_detail, visualize_dir=visualize_dir, cams_dir=args.out_cam, \
+                #         model_name=args.weights, bg_threshold=background_threshold)
+
+    print("Session finished:{}".format(time.ctime(time.time())))

@@ -34,9 +34,9 @@ def GetAnnotBoxLoc(AnotPath):#AnotPath VOC标注文件路径
         BndBoxLoc=[x1,y1,x2,y2]
         cat_num = CAT_NAME_TO_NUM[ObjName]+1
         if cat_num in ObjBndBoxSet:
-        	ObjBndBoxSet[cat_num].append(BndBoxLoc)#如果字典结构中含有这个类别了，那么这个目标框要追加到其值的末尾
+            ObjBndBoxSet[cat_num].append(BndBoxLoc) #如果字典结构中含有这个类别了，那么这个目标框要追加到其值的末尾
         else:
-        	ObjBndBoxSet[cat_num]=[BndBoxLoc]#如果字典结构中没有这个类别，那么这个目标框就直接赋值给其值吧
+            ObjBndBoxSet[cat_num]=[BndBoxLoc] #如果字典结构中没有这个类别，那么这个目标框就直接赋值给其值吧
     return ObjBndBoxSet
 ##get object annotation bndbox loc end
 
@@ -53,34 +53,31 @@ def display(objBox,pic):
 
 
 if __name__== '__main__':
-  #   pic = r"F:/学习/Patrick/image segmentation/参考工程/DSRG-tensorflow-master/data/VOCdevkit/VOC2012/JPEGImages/2007_000032.jpg"
-  #   train_file_path = "F:/学习/Patrick/image segmentation/参考工程/SSENet-pytorch-master/voc12/train_aug.txt"
-  #   train_aug_file = open(train_file_path, "r")
-  #   bounding_box_list = {}
-  #   for line in train_aug_file.readlines():
-  #   	line = line[12:23]
-		# # train_aug_list.append(line)
-  #   	ObjBndBoxSet=GetAnnotBoxLoc(os.path.join('F:/学习/Patrick/image segmentation/参考工程/DSRG-tensorflow-master/data/VOCdevkit/VOC2012/Annotations','%s.xml'%line))
-  #   	bounding_box_list[line] = ObjBndBoxSet
+    train_file_path = "/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt"
+    train_aug_file = open(train_file_path, "r")
+    bounding_box_list = {}
+    for line in train_aug_file.readlines():
+        line = line[12:23]
+        ObjBndBoxSet=GetAnnotBoxLoc(os.path.join('/usr/volume/WSSS/VOCdevkit/VOC2012/Annotations','%s.xml'%line))
+        bounding_box_list[line] = ObjBndBoxSet
 
-  #   val_file_path = "F:/学习/Patrick/image segmentation/参考工程/SSENet-pytorch-master/voc12/val.txt"
-  #   val_file = open(val_file_path, "r")
-  #   for line in val_file.readlines():
-  #   	line = line[12:23]
-		# # train_aug_list.append(line)
-  #   	ObjBndBoxSet=GetAnnotBoxLoc(os.path.join('F:/学习/Patrick/image segmentation/参考工程/DSRG-tensorflow-master/data/VOCdevkit/VOC2012/Annotations','%s.xml'%line))
-  #   	bounding_box_list[line] = ObjBndBoxSet
+    val_file_path = "/usr/volume/WSSS/WSSS_PML/voc12/val_voc12.txt"
+    val_file = open(val_file_path, "r")
+    for line in val_file.readlines():
+        line = line[12:23]
+        ObjBndBoxSet=GetAnnotBoxLoc(os.path.join('/usr/volume/WSSS/VOCdevkit/VOC2012/Annotations','%s.xml'%line))
+        bounding_box_list[line] = ObjBndBoxSet
 
-  #   print(ObjBndBoxSet)
-  #   np.save("bounding_box.npy", bounding_box_list)
+    # print(ObjBndBoxSet)
+    np.save("bounding_box.npy", bounding_box_list)
     
 
 
-    bounding = np.load(os.path.join('bounding_box.npy'), allow_pickle=True).item()
-    bounding_box = bounding['2007_000033']
-    print(bounding_box)
-  # # #   for key in bounding_box.keys():
-  # #   	print(key)
-		# # lens = len(bounding_box[key])
-		# # for i in range(lens):
-		# # 	print(bounding_box[key][i])
+    # bounding = np.load(os.path.join('bounding_box.npy'), allow_pickle=True).item()
+    # bounding_box = bounding['2007_000033']
+    # print(bounding_box)
+    # for key in bounding_box.keys():
+    #     print(key)
+    #     lens = len(bounding_box[key])
+    #     for i in range(lens):
+    #         print(bounding_box[key][i])

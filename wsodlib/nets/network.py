@@ -5,9 +5,9 @@
 # Modified by Jiajie Wang for ws-Faster-rcnn
 
 # --------------------------------------------------------
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+# from __future__ import absolute_import
+# from __future__ import division
+# from __future__ import print_function
 
 import math
 import numpy as np
@@ -26,9 +26,9 @@ from layer_utils.anchor_target_layer import anchor_target_layer
 from layer_utils.proposal_target_layer import proposal_target_layer
 from layer_utils.generate_pseudo_gtbox import generate_pseudo_gtbox
 from layer_utils.loss_function import bootstrap_cross_entropy
+from layer_utils.mist_layer import MISTLayer
 from utils.visualization import draw_bounding_boxes
 # from layer_utils.ocir_layer import OICRLayer
-from layer_utils.mist_layer import MISTLayer
 
 # from layer_utils.roi_pooling.roi_pool import RoIPoolFunction
 from torchvision.ops import RoIAlign, RoIPool
@@ -37,7 +37,7 @@ from model.config import cfg
 
 import tensorboardX as tb
 
-from scipy.misc import imresize
+# from scipy.misc import imresize
 
 
 
@@ -57,20 +57,20 @@ class Network(nn.Module):
         self._image_gt_summaries = {}
         self._variables_to_fix = {}
 
-    def _add_gt_image(self):
-        # add back mean
-        image = self._image_gt_summaries['image'] + cfg.PIXEL_MEANS
-        image = imresize(image[0], self._im_info[:2] / self._im_info[2])
-        # BGR to RGB (opencv uses BGR)
-        self._gt_image = image[np.newaxis, :, :, ::-1].copy(order='C')
+    # def _add_gt_image(self):
+    #     # add back mean
+    #     image = self._image_gt_summaries['image'] + cfg.PIXEL_MEANS
+    #     image = imresize(image[0], self._im_info[:2] / self._im_info[2])
+    #     # BGR to RGB (opencv uses BGR)
+    #     self._gt_image = image[np.newaxis, :, :, ::-1].copy(order='C')
 
-    def _add_gt_image_summary(self):
-        # use a customized visualization function to visualize the boxes
-        self._add_gt_image()
-        image = draw_bounding_boxes( \
-            self._gt_image, np.zeros((0, 5)), self._image_gt_summaries['im_info'])  # no bounding_box ground_truth
+    # def _add_gt_image_summary(self):
+    #     # use a customized visualization function to visualize the boxes
+    #     self._add_gt_image()
+    #     image = draw_bounding_boxes( \
+    #         self._gt_image, np.zeros((0, 5)), self._image_gt_summaries['im_info'])  # no bounding_box ground_truth
 
-        return tb.summary.image('GROUND_TRUTH', image[0].astype('float32') / 255.0)
+    #     return tb.summary.image('GROUND_TRUTH', image[0].astype('float32') / 255.0)
 
     def _add_act_summary(self, key, tensor):
         return tb.summary.histogram('ACT/' + key + '/activations', tensor.data.cpu().numpy(), bins='auto'),

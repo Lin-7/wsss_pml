@@ -74,7 +74,7 @@ if __name__ == '__main__':
     parser.add_argument("--infer_list", default="voc12/train_voc12.txt", type=str)
     # parser.add_argument("--infer_list", default="voc12/train_aug.txt", type=str)
     # parser.add_argument("--infer_list", default="/home/chenkeke/project/WSSS/psa/voc12/val.txt", type=str)
-    parser.add_argument("--voc12_root", default='/usr/volume/WSSS/VOC2012', type=str)
+    parser.add_argument("--voc12_root", default='/usr/volume/WSSS/VOCdevkit/VOC2012', type=str)
 
     # 其他参数
     parser.add_argument("--num_workers", default=16, type=int)

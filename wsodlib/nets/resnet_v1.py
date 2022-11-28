@@ -3,12 +3,12 @@
 # Licensed under The MIT License [see LICENSE for details]
 # Written by Zheqi He and Xinlei Chen
 # --------------------------------------------------------
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+# from __future__ import absolute_import
+# from __future__ import division
+# from __future__ import print_function
 
-from nets.network import Network
-from nets.network_fast import Network_Fast
+from .network import Network
+from .network_fast import Network_Fast
 from model.config import cfg
 
 # import utils.timer

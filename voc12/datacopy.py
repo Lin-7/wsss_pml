@@ -5,6 +5,7 @@ from torch.utils.data import Dataset
 import PIL.Image
 import os.path
 import scipy.misc
+import random
 
 IMG_FOLDER_NAME = "JPEGImages"
 ANNOT_FOLDER_NAME = "Annotations"
@@ -64,10 +65,11 @@ def load_img_name_list(dataset_path, is_small):
 
 class VOC12ImageDataset(Dataset):
 
-    def __init__(self, img_name_list_path, voc12_root, is_small=False,transform=None):
+    def __init__(self, img_name_list_path, voc12_root, gt_root, is_small=False,transform=None):
         self.img_name_list = load_img_name_list(img_name_list_path, is_small)
         self.voc12_root = voc12_root
         self.transform = transform
+        self.gt_root = gt_root
 
     def __len__(self):
         return len(self.img_name_list)
@@ -76,31 +78,49 @@ class VOC12ImageDataset(Dataset):
         name = self.img_name_list[idx]
 
         img = PIL.Image.open(get_img_path(name, self.voc12_root)).convert("RGB")
+        gtSeg = PIL.Image.open(os.path.join(self.gt_root,'%s.png'%name)).convert("RGB")
 
         if self.transform:
             img = self.transform(img)
 
 
-        return name, img
+        return name, img, gtSeg
 
 
 class VOC12ClsDataset(VOC12ImageDataset):
 
-    def __init__(self, img_name_list_path, voc12_root, transform=None, bounding_transform=None, is_small=False):
-        super().__init__(img_name_list_path, voc12_root, is_small, None)
+    def __init__(self, img_name_list_path, voc12_root, gt_root, transform=None, bounding_transform=None, is_small=False):
+        super().__init__(img_name_list_path, voc12_root, gt_root, is_small, None)
         self.inner_transform = transform
         self.label_list = load_image_label_list_from_npy(self.img_name_list, is_small)
+        # self.bounding_transform = bounding_transform
+        # self.bounding_box_list = load_bounding_box_list_from_npy(self.img_name_list)
 
     def __getitem__(self, idx):
-        name, img = super().__getitem__(idx)
-        W, H = img.size   # 将w定义为前面的一维，后面都要按这个来
+        name, img, gtSeg = super().__getitem__(idx)
+        W, H = img.size
+        # bounding_box = self.bounding_box_list[idx]
+        # if self.bounding_transform:
+        #     h,w = self.bounding_transform
+        #     for key in bounding_box:
+        #         lens = len(bounding_box[key])
+        #         for i in range(lens):
+        #             bounding_box[key][i][0] *= float(w)/W
+        #             bounding_box[key][i][1] *= float(h)/H
+        #             bounding_box[key][i][2] *= float(w)/W
+        #             bounding_box[key][i][3] *= float(h)/H
 
         if self.inner_transform:
+            random_seed = np.random.randint(123456789)
+            random.seed(random_seed)
             img = self.inner_transform(img)
+            random.seed(random_seed)
+            gtSeg = self.inner_transform(gtSeg)
+            assert img.size() == gtSeg.size()
 
         label = torch.from_numpy(self.label_list[idx])
 
-        return name, img, label, H, W
+        return name, img, gtSeg, label, H, W
 
 
 class VOC12ClsDatasetMSF(VOC12ClsDataset):

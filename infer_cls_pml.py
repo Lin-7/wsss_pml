@@ -38,7 +38,7 @@ if __name__ == '__main__':
     # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/{phase}_voc12.txt", type=str)
     parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/val_voc12.txt", type=str)  # 跟phase指定的值要一致
     # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/testimg.txt", type=str)
-    parser.add_argument("--voc12_root", default='/usr/volume/WSSS/VOC2012', type=str)
+    parser.add_argument("--voc12_root", default='/usr/volume/WSSS/VOCdevkit/VOC2012', type=str)
 
     # 其他参数
     parser.add_argument("--num_workers", default=1, type=int)

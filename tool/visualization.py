@@ -7,9 +7,13 @@ import cv2
 # from cv2.ximgproc import l0Smooth
 import pydensecrf.densecrf as dcrf
 from pydensecrf.utils import unary_from_softmax
-import PIL.Image
-import scipy
 import numpy as np
+from sklearn.manifold import TSNE
+import PIL.Image
+import matplotlib.pyplot as plt
+from voc12.data import get_img_path
+from tool.imutils import reNormalize
+
 
 def color_pro(pro, img=None, rate=0.5, mode='hwc'):
 	H, W = pro.shape
@@ -138,6 +142,7 @@ def ColorCLS(prob, func_label2color):
 	prob_idx = np.argmax(prob, axis=0)
 	CLS = func_label2color(prob_idx).transpose((2,0,1))
 	return CLS
+	
 # 将单通道的标签图变成三通道RGB标签图
 def VOClabel2colormap(label):
 	m = label.astype(np.uint8)
@@ -168,12 +173,11 @@ def dense_crf(probs, img=None, n_classes=21, n_iters=1, scale_factor=1):
 	preds = np.array(Q, dtype=np.float32).reshape((n_classes, h, w))
 	return preds
 
-# ======
 def gen_cam_vis():
 	cam_root = "/usr/volume/WSSS/WSSS_PML/out_cam_train"
 	cam_saved_root = "/usr/volume/WSSS/WSSS_PML/visualization_results_w6/cam_pml/"
 	os.makedirs(cam_saved_root, exist_ok=True)
-	voc_root = "/usr/volume/WSSS/VOC2012"
+	voc_root = "/usr/volume/WSSS/VOCdevkit/VOC2012"
 	with open("/usr/volume/WSSS/WSSS_PML/voc12/train_voc12.txt") as fp:
 		lines = fp.readlines()
 	for idx, line in enumerate(lines):
@@ -220,13 +224,101 @@ def gen_pseudo_mask_vis():
 def gen_object_proposals():
 	pass
 
+def visualize_patch(patches, patch_labels, patch_mask, save_dir, epoch):
+	# tSNE降维以及可视化
+	tsne = TSNE(n_components=2, learning_rate='auto').fit_transform(patches)
+	plt.figure(figsize=(40,40), dpi=120)
+	# 被选择的patches
+	if len(patch_labels[patch_mask==1]) > 0:
+		plt.scatter(tsne[patch_mask==1,0], tsne[patch_mask==1,1], c=patch_labels[patch_mask==1], marker='+', cmap=plt.cm.Spectral, edgecolors='k', alpha=1, s=100)
+	# 没有被选择的patches
+	if len(patch_labels[patch_mask==0]) > 0:
+		scatter = plt.scatter(tsne[patch_mask==0,0], tsne[patch_mask==0,1], c=patch_labels[patch_mask==0], marker='o', cmap=plt.cm.Spectral, alpha=0.4)
+		plt.legend(handles=scatter.legend_elements(num=None)[0], labels=[f'{i}' for i in range(1,21)], loc='best')
+	plt.savefig(save_dir + f'epoch{epoch}_visualize_patches-s.jpg')
+
+	plt.figure(figsize=(20,20), dpi=80)
+	if len(patch_labels[patch_mask==1]) > 0:
+		plt.scatter(tsne[patch_mask==1,0], tsne[patch_mask==1,1], c=patch_labels[patch_mask==1], marker='+', cmap=plt.cm.Spectral, edgecolors='k', alpha=1, s=100)
+	if len(patch_labels[patch_mask==0]) > 0:
+		scatter = plt.scatter(tsne[patch_mask==0,0], tsne[patch_mask==0,1], c=patch_labels[patch_mask==0], marker='o', cmap=plt.cm.Spectral, alpha=0.4)
+		plt.legend(handles=scatter.legend_elements(num=None)[0], labels=[f'{i}' for i in range(1,21)], loc='best')
+	plt.savefig(save_dir + f'epoch{epoch}_visualize_patches-b.jpg')
+
+'''
+categories = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow',
+              'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
+def visualize_batch_patches(imgs, img_names, patch_locs, patch_img_labels, patch_labels, patch_mask, patch_scores, triples, args, epoch_iter):
+
+	device = torch.cuda.current_device()
+	if device==1:
+		return
+	img_names = img_names[imgs.shape[0]*device:imgs.shape[0]*(device+1)]
+	imgs = imgs.numpy().transpose((0,2,3,1))
+	imgs = reNormalize(imgs)           # 该函数接受hwc的输入
+	img_list = [PIL.Image.fromarray(imgs[i]) for i in range(imgs.shape[0])]    # 该函数接受hwc的输入
+
+	cur_save_dir = args.visualize_patch_dir + '/' + epoch_iter+f"_{torch.cuda.current_device()}"
+	if not os.path.exists(cur_save_dir):
+		os.mkdir(cur_save_dir)
+
+	unselected_dir = cur_save_dir + '/unselected'
+	if not os.path.exists(unselected_dir):
+		os.mkdir(unselected_dir)
+
+	selected_dir = cur_save_dir + '/selected'
+	if not os.path.exists(selected_dir):
+		os.mkdir(selected_dir)
+	
+	for i in range(len(imgs)):
+		cur_img = PIL.Image.open(get_img_path(img_names[i], args.voc12_root)).convert("RGB")
+		cur_img.save(unselected_dir+'/img{}.png'.format(img_names[i]))
+
+	unselected_idxs = np.array(range(len(patch_mask)))[patch_mask == 0]
+	for i in range(len(unselected_idxs)):
+		origin_idx = unselected_idxs[i]
+		cur_img = img_list[patch_img_labels[origin_idx]]
+		patch = cur_img.crop(patch_locs[origin_idx])
+		size = patch.size
+		patch = patch.resize((300, int(300/size[0]*size[1])))
+		patch.save(unselected_dir+'/img{}_{}_score{:.3f}.png'.format(img_names[patch_img_labels[origin_idx]], categories[patch_labels[origin_idx]-1], patch_scores[origin_idx]))
+
+	selected_idxs = np.array(range(len(patch_mask)))[patch_mask == 1]
+	for i in range(len(selected_idxs)):
+		origin_idx = selected_idxs[i]
+		cur_img = img_list[patch_img_labels[origin_idx]]
+		patch = cur_img.crop(patch_locs[origin_idx])
+		size = patch.size
+		patch = patch.resize((300, int(300/size[0]*size[1])))
+		patch.save(selected_dir+'/img{}_{}_score{:.3f}.png'.format(img_names[patch_img_labels[origin_idx]], categories[patch_labels[origin_idx]-1], patch_scores[origin_idx]))
+
+	# 将triplet中的所有三元组可视化到一张图上（指定每行三张以及每张图的大小），所有triplet的anchor就是所有选择下来的patches
+	lines = len(triples)
+	pic_per_line = 3
+	plt.figure(figsize=(12,90))
+
+	for i in range(lines):
+		for j in range(pic_per_line):
+			plt.subplot(lines, pic_per_line, i*pic_per_line+j+1)
+
+			origin_idx = triples[i][j]
+			cur_img = img_list[patch_img_labels[origin_idx]]
+			patch = cur_img.crop(patch_locs[origin_idx])
+			plt.imshow(np.array(patch))
+
+			plt.xticks([])
+			plt.yticks([])
+			plt.xlabel('img{}_{}_score{:.3f}'.format(img_names[patch_img_labels[origin_idx]], categories[patch_labels[origin_idx]-1], patch_scores[origin_idx]))
+
+	plt.savefig(os.path.join(cur_save_dir, 'triplets.jpg'), bbox_inches='tight')
+'''	
 
 if __name__ == "__main__":
 	# cam_root="/usr/volume/WSSS/WSSS_PML/out_cam_train"
 	pseudo_mask_saved_root="/home/chenkeke/project/WSSS/psa/visualization_proposals/"
 	os.makedirs(pseudo_mask_saved_root, exist_ok=True)
 	pseudo_mask_root="/home/chenkeke/project/WSSS/psa/out_cam_pred/"
-	voc_root = "/usr/volume/WSSS/VOC2012"
+	voc_root = "/usr/volume/WSSS/VOCdevkit/VOC2012"
 
 	with open("/usr/volume/WSSS/WSSS_PML/voc12/train_voc12.txt") as fp:
 		lines=fp.readlines()

@@ -19,7 +19,7 @@ from tqdm import tqdm
 import shutil
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 categories = ['background', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow',
               'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train',
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     parser.add_argument("--weights", default="/usr/volume/WSSS/weights_released/res38_cls.pth", type=str)
     # parser.add_argument("--weights", default="/usr/volume/WSSS/weights_released/resnet38_cls_ser_0.3.pth", type=str)
 
-    parser.add_argument("--voc12_root", default="/usr/volume/WSSS/VOC2012", type=str)
+    parser.add_argument("--voc12_root", default="/usr/volume/WSSS/VOCdevkit/VOC2012", type=str)
 
     parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini.txt", type=str)
     # parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt", type=str)
