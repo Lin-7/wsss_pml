@@ -1,3 +1,10 @@
+# print("hello world!")
+import os
+import torch
+from voc12.datacopy import VOC12ClsDataset
+from torchvision import transforms
+with open('/usr/volume/WSSS/WSSS_PML/test2.txt', 'w') as f:
+    f.write("hello world!")
 '''
     修改图片预处理函数，对图片和gt_Seg同步调整大小
 '''
@@ -39,23 +46,23 @@
 #                                 shuffle=True, num_workers=num_workers, pin_memory=True, drop_last=True,
 #                                 worker_init_fn=worker_init_fn)
 
-# for iter, pack in enumerate(train_data_loader):
-#     pass
-#     # pack 再包含分割gt
-#     # 取出之后看大小是否匹配
-import os
-dataset_path = "/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt"
-list = os.listdir("/usr/volume/WSSS/VOCdevkit/VOC2012/Annotations")
-print(len(list))
-img_gt_name_list = open(dataset_path).read().splitlines()
-img_name_list = [img_gt_name.split(' ')[0][-15:-4] for img_gt_name in img_gt_name_list]
-print("img nums:{}".format(len(img_name_list)))
-cout = 0
-for name in img_name_list:
-    if not f"{name}.xml" in list:
-        print(name)
-        cout+=1
-print(cout)
+# # for iter, pack in enumerate(train_data_loader):
+# #     pass
+# #     # pack 再包含分割gt
+# #     # 取出之后看大小是否匹配
+# import os
+# dataset_path = "/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt"
+# list = os.listdir("/usr/volume/WSSS/VOCdevkit/VOC2012/Annotations")
+# print(len(list))
+# img_gt_name_list = open(dataset_path).read().splitlines()
+# img_name_list = [img_gt_name.split(' ')[0][-15:-4] for img_gt_name in img_gt_name_list]
+# print("img nums:{}".format(len(img_name_list)))
+# cout = 0
+# for name in img_name_list:
+#     if not f"{name}.xml" in list:
+#         print(name)
+#         cout+=1
+# print(cout)
 
 '''
     找到目标图片保存在当前路径下

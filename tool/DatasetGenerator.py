@@ -7,6 +7,11 @@ from torchvision import transforms
 from xml.dom.minidom import Document
 
 
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
+
 def find_size (width, height): # 求生成放大图片的size（维持比例不变，宽高不小于448）
     i = 1
     w = width

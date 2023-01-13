@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-from tool.RoiPooling_Jointly import RoiPooling, RoiPoolingRandom, RoiPoolingContrastive
+from tool.RoiPooling_Jointly_origin import RoiPooling, RoiPoolingRandom
 import network.resnet38d
 
 import cv2
@@ -17,9 +17,6 @@ import PIL.Image
 import matplotlib.pyplot as plt
 from voc12.data import get_img_path
 from tool.imutils import reNormalize
-
-# from tool import pyutils
-# seed = pyutils.seed_everything()
 
 categories = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow',
               'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
@@ -59,23 +56,14 @@ class Net(network.resnet38d.Net):
         # 平均池化，得到CAM的bounding box后，要对这一个区域中的特征做一个平均池化
         # 1 先align box的位置
         # 2 对box内的feature map做一个平均池化
-        
+        self.roi_pooling = RoiPooling(mode="th")
+        self.roi_pooling_random = RoiPoolingRandom(mode="th")
         self.ranking_loss = nn.MarginRankingLoss(margin=28.0)
         self.ranking_loss_same_img = nn.MarginRankingLoss(margin=28.0)
-    
-    def init_roi_pooling_method(self, args):
-        if args.patch_gen == "4patch":
-            self.roi_pooling = RoiPooling(mode="th")
-        elif args.patch_gen == "randompatch":
-            self.roi_pooling = RoiPoolingRandom(mode="th")
-        elif args.patch_gen == "contrastivepatch":
-            self.roi_pooling = RoiPoolingContrastive(mode="th", args=args)
-        else:
-            raise ValueError(f"patch_gen must be 4patch, randompatch or contrastivepatch, but now it is {args.patch_gen}")
 
     # 输入CAM图片和对应的类别
     # 返回bounding box的坐标和对应的类别
-    def get_roi_index(self, cam, cls_label, padding=0):
+    def get_roi_index(self, cam, cls_label):
         '''
         For each image
         :param cam: 20 * W* H
@@ -145,13 +133,6 @@ class Net(network.resnet38d.Net):
                     ymin = bounding_box[l][i][1]
                     xmax = bounding_box[l][i][2]
                     ymax = bounding_box[l][i][3]
-                    
-                    if padding != 0:
-                        w, h = xmax-xmin, ymax-ymin
-                        xmin = max(0, xmin-int(w*padding))
-                        ymin = max(0, ymin-int(h*padding))
-                        xmax = min(W, xmax+int(w*padding))
-                        ymax = min(H, ymax+int(h*padding))
 
                     roi_index.append(list([xmin, ymin, xmax, ymax]))
                     label_list.append(l)
@@ -159,7 +140,7 @@ class Net(network.resnet38d.Net):
                         # print("2")
                         # return roi_index, label_list
                         break
-        return roi_index, label_list, cam_predict  # 这里的坐标先横轴再纵轴
+        return roi_index, label_list, cam_predict
 
     # 算两个feature map的欧几里得距离; 在metric learning中用的
     def euclidean_dist(self,x, y):
@@ -178,16 +159,14 @@ class Net(network.resnet38d.Net):
         yy = torch.pow(y, 2).sum(1, keepdim=True).expand(n, m).t()
         dist = xx + yy
         # torch.addmm(beta=1, input, alpha=1, mat1, mat2, out=None)，这行表示的意思是dist - 2 * x * yT
-        # dist.addmm_(1, -2, x, y.t())
-        dist.addmm_(x, y.t(), beta=1, alpha=-2)
+        dist.addmm_(1, -2, x, y.t())
         # clamp()函数可以限定dist内元素的最大最小范围，dist最后开方，得到样本之间的距离矩阵
         dist = dist.clamp(min=1e-12).sqrt()  # for numerical stability
         return dist
 
     # 基于得到的bounding box和label, 变成feature vector后计算metric learning loss
     # patch_nums=[1, 4, 9, 16, 25]
-    def patch_based_metric_loss(self, img, x_patch, label, bboxes, bbxs_cls, bbxs_img, patch_nums=[4], 
-                    is_same_img=False, is_hard_negative=True, epoch_iter="null", img_names=[], args=""):
+    def patch_based_metric_loss(self, img, x_patch, label, bboxes, bbxs_cls, bbxs_img, patch_nums=[4], is_same_img=False, is_hard_negative=True, epoch_iter="null", img_names=[], args=""):
 
         N_f, _, patch_w, patch_h = x_patch.size()
         assert patch_w==patch_h, "特征图长宽不等，下面特征图坐标与原图坐标的对齐操作可能会出错"
@@ -203,25 +182,25 @@ class Net(network.resnet38d.Net):
         triplet_info = []
         patch_embs = []
 
-        # # 将图片坐标转换为特征图上的坐标
-        # f2i_scale_w = patch_w/img.size(2)
-        # f2i_scale_h = patch_h/img.size(3)
-        # gt_bbx_mask = []
-        # for b_idx in range(len(bboxes)):
-        #     bboxes[b_idx][0] *= f2i_scale_w
-        #     bboxes[b_idx][1] *= f2i_scale_h
-        #     bboxes[b_idx][2] *= f2i_scale_w
-        #     bboxes[b_idx][3] *= f2i_scale_h
-        #     bw = bboxes[b_idx][2]-bboxes[b_idx][0]
-        #     bh = bboxes[b_idx][3]-bboxes[b_idx][1]
-        #     if bw < 9 or bh < 9 or (bh / bw) > 4 or (bw / bh) > 4:
-        #         gt_bbx_mask.append(0)
-        #     else:
-        #         gt_bbx_mask.append(1)
-        # gt_bbx_mask = np.array(gt_bbx_mask)
-        # bboxes = bboxes[gt_bbx_mask==1]
-        # bbxs_cls = bbxs_cls[gt_bbx_mask==1]
-        # bbxs_img = bbxs_img[gt_bbx_mask==1]
+        # 将图片坐标转换为特征图上的坐标
+        f2i_scale_w = patch_w/img.size(2)
+        f2i_scale_h = patch_h/img.size(3)
+        gt_bbx_mask = []
+        for b_idx in range(len(bboxes)):
+            bboxes[b_idx][0] *= f2i_scale_w
+            bboxes[b_idx][1] *= f2i_scale_h
+            bboxes[b_idx][2] *= f2i_scale_w
+            bboxes[b_idx][3] *= f2i_scale_h
+            bw = bboxes[b_idx][2]-bboxes[b_idx][0]
+            bh = bboxes[b_idx][3]-bboxes[b_idx][1]
+            if bw < 9 or bh < 9 or (bh / bw) > 4 or (bw / bh) > 4:
+                gt_bbx_mask.append(0)
+            else:
+                gt_bbx_mask.append(1)
+        gt_bbx_mask = np.array(gt_bbx_mask)
+        bboxes = bboxes[gt_bbx_mask==1]
+        bbxs_cls = bbxs_cls[gt_bbx_mask==1]
+        bbxs_img = bbxs_img[gt_bbx_mask==1]
         proposal_num = 0 
         
         for i in range(N_f):# for 每张图片
@@ -229,7 +208,7 @@ class Net(network.resnet38d.Net):
             if is_same_img:
                 roi_index, label_list = self.get_roi_index_patch_same_image(cam_wo_dropout1[i].detach(), label[i])
             else:
-                roi_index, label_list, mask_predict = self.get_roi_index(cam_wo_dropout1[i].detach(), label[i], args.proposal_padding)   # 检查最大值是否与特征图长度一致--是的
+                roi_index, label_list, mask_predict = self.get_roi_index(cam_wo_dropout1[i].detach(), label[i])   # 检查最大值是否与特征图长度一致--是的
                 # label_list中label范围1-20
                 # bbox_idxs = bbxs_img==i
                 # roi_index = bboxes[bbox_idxs]
@@ -237,16 +216,25 @@ class Net(network.resnet38d.Net):
 
             if len(label_list) > 0:   # 用cams激活区域的boundingbox去框在最后一组特征（256维）中的对应位置，然后切成patch_num份，每一份中每一维做一个全局平均池化
                 proposal_num += len(label_list)
-                roi_cls_pooled, roi_label_list, score_list, p_locs \
+                if args.patch_gen == "":
+                    raise ValueError("you must pass the 'args.patch_gen' to the model")
+                if args.patch_gen == "4patch":
+                   roi_cls_pooled, fg_roi_cls_pooled, nfg_roi_cls_pooled, roi_label_list, score_list, p_locs \
                     = self.roi_pooling(feature_map=x_patch[i], roi_batch=roi_index, label_list=label_list, \
                         patch_nums=patch_nums, cam_predict=mask_predict, cam=cam_wo_dropout1[i].detach(), cls_label=label[i])  # predict roi_cls_label
+                elif args.patch_gen == "randompatch":
+                    roi_cls_pooled, fg_roi_cls_pooled, nfg_roi_cls_pooled, roi_label_list, score_list, p_locs \
+                    = self.roi_pooling_random(feature_map=x_patch[i], roi_batch=roi_index, label_list=label_list, \
+                        patch_nums=patch_nums, cam_predict=mask_predict, cam=cam_wo_dropout1[i].detach(), cls_label=label[i])  # predict roi_cls_label
+                else:
+                    raise ValueError("no implement for args.patch_gen={}".format(args.patch_gen))
 
                 if len(roi_cls_pooled) > 0:
 
                     scores.extend(score_list)
                     roi_cls_feature_vector.append(roi_cls_pooled)
-                    # fg_roi_cls_feature_vector.append(fg_roi_cls_pooled)
-                    # nfg_roi_cls_feature_vector.append(nfg_roi_cls_pooled)
+                    fg_roi_cls_feature_vector.append(fg_roi_cls_pooled)
+                    nfg_roi_cls_feature_vector.append(nfg_roi_cls_pooled)
                     roi_cls_label.extend(roi_label_list)
                     img_ids.extend([i]*len(roi_label_list))
                     patch_locs.extend(p_locs)
@@ -267,14 +255,17 @@ class Net(network.resnet38d.Net):
             patch_mask = torch.tensor([-1]).cuda()
         else:
             patch_embs = torch.cat(roi_cls_feature_vector, 0)
-            # fg_patch_embs = torch.cat(fg_roi_cls_feature_vector, 0)
-            # nfg_patch_embs = torch.cat(nfg_roi_cls_feature_vector, 0)
+            fg_patch_embs = torch.cat(fg_roi_cls_feature_vector, 0)
+            nfg_patch_embs = torch.cat(nfg_roi_cls_feature_vector, 0)
 
             # 以batch中的所有图片为单位挑patch
             # 按分数(前景占比,置信度）选择指定比例的patches
             sorted_idxes = np.argsort(scores)[::-1]   # 按分数(前景占比,置信度）降序排序
+            # selected_ratio = 0.5
             As = proposal_num * 4 * args.patch_select_ratio
             Ag = len(patch_labels)
+            # 0:front, 1:mid, 2:back, 3:random
+            # select_part = 1
             if args.patch_select_part == "front":
                 indexs = np.sort(sorted_idxes[:int(As)].copy())
             elif args.patch_select_part == "mid":
@@ -289,17 +280,16 @@ class Net(network.resnet38d.Net):
             elif args.patch_select_part == "random":
                 indexs = np.random.choice(range(len(scores)), size=int(As), replace=False, p=None)
             else:
-                raise ValueError(f"'patch_select_part' must be front, mid, back or random. But now 'patch_select_part' is {args.patch_select_part}!!!!")
+                raise ValueError(f"'args.patch_select_part' must be front, mid, back or random. But now 'args.patch_select_part' is {args.patch_select_part}!!!!")
             
             # 选择所有的patches
             # indexs = range(len(scores))
-            patch_mask = np.zeros(len(patch_labels))
+            patch_mask = torch.zeros_like(patch_labels)
             patch_mask[indexs] = 1
-            patch_mask = torch.tensor(patch_mask).cuda()
 
             patch_embs_select = patch_embs[indexs]
-            # fg_patch_embs_select = fg_patch_embs[indexs]
-            # nfg_patch_embs_select = nfg_patch_embs[indexs]
+            fg_patch_embs_select = fg_patch_embs[indexs]
+            nfg_patch_embs_select = nfg_patch_embs[indexs]
             patch_labels_select = patch_labels[indexs]
             img_ids_selected = img_ids[indexs]
 
@@ -315,10 +305,10 @@ class Net(network.resnet38d.Net):
             # ======
             # patch相似度
             distance = self.euclidean_dist(patch_embs_select, patch_embs_select)
-            # # 目标前景相似度
-            # fg_distance = self.euclidean_dist(fg_patch_embs_select, fg_patch_embs_select)
-            # # 非目标前景区域的相似度
-            # nfg_distance = self.euclidean_dist(nfg_patch_embs_select, nfg_patch_embs_select)
+            # 目标前景相似度
+            fg_distance = self.euclidean_dist(fg_patch_embs_select, fg_patch_embs_select)
+            # 非目标前景区域的相似度
+            nfg_distance = self.euclidean_dist(nfg_patch_embs_select, nfg_patch_embs_select)
 
             # For each anchor, find the hardest positive and negative
             mask = patch_labels_select.expand(n, n).eq(patch_labels_select.expand(n, n).t())
@@ -468,10 +458,7 @@ class Net(network.resnet38d.Net):
         x_patch = F.relu(x)         # 最后一组特征
         x2 = self.fc8_(x_patch)     # CAMs
 
-        if args.interpolate_mode == "bilinear":
-            cam = F.interpolate(x2, (W, H), mode=args.interpolate_mode, align_corners=False)    # resize到跟目前的图片一样的大小
-        else:
-            cam = F.interpolate(x2, (W, H), mode=args.interpolate_mode)    # resize到跟目前的图片一样的大小
+        cam = F.interpolate(x2, (W, H), mode='bilinear')    # resize到跟目前的图片一样的大小
 
         if featuremap:
             return x_patch
@@ -483,7 +470,14 @@ class Net(network.resnet38d.Net):
                 proposals, proposal_labels, mask_predict = self.get_roi_index(x2[i], label[i])
 
                 if len(proposal_labels)>0:
-                    roi_cls_pooled, roi_label_list = self.roi_pooling(x_patch[i], proposals, proposal_labels, patch_nums, mask_predict)
+                    if args.patch_gen=="":
+                        raise ValueError("you must pass the 'args' to the model")
+                    if args.patch_gen=="4patch":
+                        roi_cls_pooled, _, _, roi_label_list = self.roi_pooling(x_patch[i], proposals, proposal_labels, patch_nums, mask_predict)
+                    elif args.patch_gen=="randompatch":
+                        roi_cls_pooled, _, _, roi_label_list = self.roi_pooling_random(x_patch[i], proposals, proposal_labels, patch_nums, mask_predict)
+                    else:
+                        raise ValueError("no implement for args.patch_gen={}".format(args.patch_gen))
                     
                     if len(roi_cls_pooled)>0:
                         patches_list.append(roi_cls_pooled.detach().cpu().numpy())

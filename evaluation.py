@@ -8,6 +8,11 @@ import argparse
 from voc12.data import get_img_path
 from tool.visualization import color_pro
 
+
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
 categories = ['background','aeroplane','bicycle','bird','boat','bottle','bus','car','cat','chair','cow',
               'diningtable','dog','horse','motorbike','person','pottedplant','sheep','sofa','train','tvmonitor']
 # categories = ['0-background','1aeroplane','2bicycle','3bird','4boat','5bottle','6bus','7car','8cat','9chair','10cow',

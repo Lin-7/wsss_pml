@@ -14,6 +14,12 @@ miner = miners.MultiSimilarityMiner()
 loss_func = losses.TripletMarginLoss()
 
 
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
+
+
 class Net(network.resnet38d.Net):
     def __init__(self):
         super().__init__()

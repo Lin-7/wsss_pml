@@ -15,6 +15,11 @@ from voc12.data import get_img_path
 from tool.imutils import reNormalize
 
 
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
+
 def color_pro(pro, img=None, rate=0.5, mode='hwc'):
 	H, W = pro.shape
 	pro_255 = (pro*255).astype(np.uint8)

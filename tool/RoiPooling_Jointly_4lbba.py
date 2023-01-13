@@ -5,6 +5,11 @@ import torch.nn.functional as F
 import time
 import math
 
+
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
 class RoiPooling(Module):
     def __init__(self, mode='tf', pool_size=(1, 1)):
         """

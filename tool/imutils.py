@@ -3,6 +3,11 @@ import PIL.Image
 import random
 import numpy as np
 
+
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
 class RandomResizeLong():
 
     def __init__(self, min_long, max_long):

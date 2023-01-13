@@ -22,6 +22,12 @@ from wsodlib.model.bbox_transform import bbox_transform_inv, clip_boxes
 # loss_func = losses.TripletMarginLoss()
 
 
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
+
+
 class Net(network.resnet38d.Net):
     def __init__(self):
         super().__init__()

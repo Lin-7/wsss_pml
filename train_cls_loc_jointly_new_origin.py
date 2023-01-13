@@ -4,17 +4,25 @@
 '''
 
 import os
+import sys
+import os.path as osp
+
+def add_path(path):
+    if path not in sys.path:
+        sys.path.insert(0, path)
+
+this_dir = osp.dirname(__file__)
+
 import torch
-import random
 import numpy as np
-
-torch.manual_seed(7) # cpu
-torch.cuda.manual_seed(7) #gpu
-np.random.seed(7) #numpy
-random.seed(7) #random and transforms
+import random
+seed = 1234
+torch.manual_seed(seed) # cpu
+torch.cuda.manual_seed(seed) #gpu
+torch.cuda.manual_seed_all(seed)
+np.random.seed(seed) #numpy
+random.seed(seed) #random and transforms
 torch.backends.cudnn.deterministic=True # cudnn
-print(f"Random seed is set as 7")
-
 import cv2
 from torch.utils.data import DataLoader
 import torchvision
@@ -32,38 +40,32 @@ from evaluation import eval
 import voc12.data
 from tool import pyutils, imutils, torchutils, visualization
 
-
-# seed = pyutils.seed_everything()
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 categories = ['background', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow',
               'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train',
               'tvmonitor']
 
-def worker_init_fn(worker_id):
-    # 重新设置dataloader中每个worker对应的np和random的随机种子
-    np.random.seed(1+worker_id)
-    # random.seed(worker_seed)
 
-# g = torch.Generator()
-# # 设置样本shuffle随机种子，作为DataLoader的参数
-# g.manual_seed(0)
+def worker_init_fn(worker_id):
+        np.random.seed(1 + worker_id)
 
 
 if __name__ == '__main__':
     '''
         !!! 训练和评估是一起执行的，因此训练的时候确定batch_size时要给评估留时间
-        !! batch_size和num_worker都要调整
+        ！！　batch_size和num_worker都要调整
     '''
 
     parser = argparse.ArgumentParser()
     # 机器和环境的不同，会差一两个点
     parser.add_argument("--batch_size", default=10, type=int)   # 10/12   一个gpu：8×6√  两个gpu：10
     parser.add_argument("--max_epoches", default=3, type=int)   # 根据机器去修改
-    parser.add_argument("--network", default="network.resnet38_cls_ser_jointly_revised_seperatable", type=str)
+    parser.add_argument("--network", default="network.resnet38_cls_ser_jointly_revised_seperatable_origin", type=str)
     parser.add_argument("--lr", default=0.01, type=float)
     parser.add_argument("--num_workers", default=8, type=int)
-    parser.add_argument("--num_workers_infer", default=10, type=int)   # torch.utils.data.dataloader提示建议创建12个workers
+    parser.add_argument("--num_workers_infer", default=12, type=int)   # torch.utils.data.dataloader提示建议创建12个workers
     parser.add_argument("--wt_dec", default=5e-4, type=float)
 
     # 权重
@@ -82,20 +84,17 @@ if __name__ == '__main__':
 
     parser.add_argument("--crop_size", default=448, type=int)
     parser.add_argument("--optimizer", default='poly', type=str)
-
+    
     # patch生成相关的参数
-    parser.add_argument("--patch_gen", default="contrastivepatch", type=str)   # 4patch randompatch contrastivepatch
-    parser.add_argument("--ccrop_alpha", default=0.7, type=float)
+    parser.add_argument("--patch_gen", default="4patch", type=str)   # 4patch randompatch
     parser.add_argument("--patch_select_cri", default="fgratio", type=str)   # fgratio confid
-    parser.add_argument("--patch_select_ratio", default=0.4, type=float)   # 0.3 0.4 0.5
+    parser.add_argument("--patch_select_ratio", default=0.5, type=float)   # 0.3 0.4 0.5
     parser.add_argument("--patch_select_part", default="mid", type=str)   # front mid back random
-    parser.add_argument("--proposal_padding", default=0, type=float)
-    parser.add_argument("--patch_loss_weight", default=0.1, type=float)
 
-    parser.add_argument("--session_name", default="test", type=str)         # train val test
-    # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-randompatch-fgmid0.5-Sp0.3-noNp10-noNMS-11", type=str)         # train val test
-    # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-padding0.25-10patch_randomstart-fgmid0.4-seed7", type=str)         # train val test
-    # patch_loss_weight = 0.05
+    parser.add_argument("--session_name", default="test_origin_now", type=str)         # train val test
+    # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-randompatch-fgmid0.5-noNMS", type=str)         # train val test
+    # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-patchscale4-fgfront0.5", type=str)         # train val test
+    patch_loss_weight = 0.05
     parser.add_argument("--tblog", default="saved_checkpoints", type=str)
     
     # 评估参数
@@ -111,7 +110,6 @@ if __name__ == '__main__':
     # parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/WSSS_PML/log_CAM_{phase}.txt", type=str)
 
     args = parser.parse_args()
-    args.interpolate_mode = 'bilinear'  # nearest
 
     # 存放结果的根目录
     out_root = f"/usr/volume/WSSS/WSSS_PML/result/{args.session_name}/"
@@ -145,15 +143,21 @@ if __name__ == '__main__':
 
 
     # 复制主要运行文件
-    copy_files_list = ['/usr/volume/WSSS/WSSS_PML/train_cls_loc_jointly_new.py', 
-                        '/usr/volume/WSSS/WSSS_PML/network/resnet38_cls_ser_jointly_revised_seperatable.py',
-                        '/usr/volume/WSSS/WSSS_PML/tool/RoiPooling_Jointly.py',
-                        '/usr/volume/WSSS/WSSS_PML/tool/pyutils.py']
-    for copy_file in copy_files_list: 
+    copy_files_list = ['/usr/volume/WSSS/WSSS_PML/train_cls_loc_jointly_new_origin.py', 
+                        '/usr/volume/WSSS/WSSS_PML/network/resnet38_cls_ser_jointly_revised_seperatable_origin.py',
+                        '/usr/volume/WSSS/WSSS_PML/tool/RoiPooling_Jointly_origin.py']
+    for copy_file in copy_files_list:
         shutil.copy(copy_file, out_root)
 
+    #### train from imagenet params
+    # args.session_name="from_imageNet"
+    # args.weights="/usr/volume/WSSS/WSSS_PML/weights/ilsvrc-cls_rna-a1_cls1000_ep-0001.params"
+    # args.lr=0.1
+    #
+    # args.optimizer="poly"
+    #### train from imagenet params
+
     model = getattr(importlib.import_module(args.network), 'Net')()
-    model.init_roi_pooling_method(args)
 
     # 存放模型训练过程数据记录的目录（参数指定的是tensorboard文件的路径）
     tblogger = SummaryWriter(out_root + args.tblog+'log')
@@ -180,10 +184,6 @@ if __name__ == '__main__':
     train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                                    shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True,
                                    worker_init_fn=worker_init_fn)
-
-    # train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
-    #                                shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True,
-    #                                worker_init_fn=worker_init_fn,generator=g)
 
 
     max_step = (len(train_dataset) // args.batch_size)*args.max_epoches
@@ -290,10 +290,10 @@ if __name__ == '__main__':
         #     w = W // 4
         #     model.eval()
         #     with torch.no_grad():
-        #         cam = model(x=tensorboard_img,args=args)
+        #         cam = model(tensorboard_img)
         #     model.train()
         #     # Down samples the input to the given size
-        #     p = F.interpolate(cam, (h, w), mode=args.interpolate_mode, align_corners=False)[0].detach().cpu().numpy()     
+        #     p = F.interpolate(cam, (h, w), mode='bilinear')[0].detach().cpu().numpy()     
         #     bg_score = np.zeros((1, h, w), np.float32)
         #     p = np.concatenate((bg_score, p), axis=0)  # 追加背景cam
         #     bg_label = np.ones((1, 1, 1), np.float32)
@@ -365,7 +365,7 @@ if __name__ == '__main__':
             # 但这属于一个multi task的训练, 我们的整个框架依赖于模型要有一个比较小的loss_cls, 才能持续地输出准确的cam
             # 因此要将它们两reweight到一个数量级,让模型同时去关注这两个点
             # 有多个loss的: 最基础的--reweight到同一个数量级,但是具体的表现或者说数值还是得通过实验结果去看(10,20,30都是一个数量级嘛,很多情况)
-            loss = loss_cls + loss_patch * args.patch_loss_weight
+            loss = loss_cls + loss_patch * patch_loss_weight
             # loss = loss_cls
             avg_meter2.add({'loss_patch': loss_patch.item()})
             avg_meter.add({'loss': loss.item()})
@@ -396,16 +396,14 @@ if __name__ == '__main__':
         if args.optimizer=='adam':
             optimizer.adam_turn_step()
 
-        # visualize_start = time.time()
         # # 可视化所有patch的特征分布，所选择的patch，构造triplet的patch
         # visualization.visualize_patch(patches=torch.stack(patches).numpy(), patch_labels=torch.stack(p_labels).numpy(), patch_mask=torch.stack(p_masks).numpy(), save_dir=args.visualize_patch_dir, epoch=ep)
-        # print("time for visualization:{:.2f}s".format(time.time()-visualize_start))
 
         # 每个epoch保存模型
         model_saved_root=log_root
         os.makedirs(model_saved_root, exist_ok=True)
         model_saved_dir = os.path.join(model_saved_root, f"{ep}ep.pth")
-        # torch.save(model.module.state_dict(),model_saved_dir)
+        torch.save(model.module.state_dict(),model_saved_dir)
 
         avg_meter.pop()
 
@@ -464,13 +462,10 @@ if __name__ == '__main__':
             def _work(i, img):
                 with torch.no_grad():
                     with torch.cuda.device(i%n_gpus):
-                        cam = model(x=img.cuda(), args=args)
+                        cam = model(img.cuda())
                         # print(cam)
                         cam = F.relu(cam, inplace=True)
-                        if args.interpolate_mode == "bilinear":
-                            cam = F.interpolate(cam, orig_img_size, mode=args.interpolate_mode, align_corners=False)[0]
-                        else:
-                            cam = F.interpolate(cam, orig_img_size, mode=args.interpolate_mode)[0]
+                        cam = F.interpolate(cam, orig_img_size, mode='bilinear', align_corners=False)[0]
                         cam = cam.cpu().numpy() * label.clone().view(20, 1, 1).numpy()
                         if i % 2 == 1:
                             cam = np.flip(cam, axis=-1)
@@ -489,8 +484,8 @@ if __name__ == '__main__':
                 if label[i] > 1e-5:
                     cam_dict[i] = norm_cam[i]
 
-            # if args.out_cam is not None:  # 部分CAM
-            #     np.save(os.path.join(args.out_cam, img_name + '.npy'), cam_dict)
+            if args.out_cam is not None:  # 部分CAM
+                np.save(os.path.join(args.out_cam, img_name + '.npy'), cam_dict)
 
             if args.out_cam_pred is not None:   # 根据cams的预测结果
                 for background_threshold in bg_thresh:

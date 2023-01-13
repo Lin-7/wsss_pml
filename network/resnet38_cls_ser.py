@@ -6,6 +6,12 @@ import network.resnet38d
 import numpy as np
 
 
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
+
+
 class Net(network.resnet38d.Net):
     def __init__(self):
         super().__init__()

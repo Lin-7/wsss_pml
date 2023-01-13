@@ -16,6 +16,11 @@ import argparse
 import importlib
 import os
 
+
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 if __name__ == '__main__':

@@ -6,6 +6,11 @@ import torch.nn.functional as F
 import network.resnet38d
 from tool import pyutils
 
+
+# seed = pyutils.seed_everything()
+
+
+
 class Net(network.resnet38d.Net):
     def __init__(self):
         super(Net, self).__init__()

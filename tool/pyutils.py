@@ -2,6 +2,50 @@
 import numpy as np
 import time
 import sys
+import torch
+import os
+import random
+
+
+# def c():
+#     '''
+#     设置整个开发环境的seed
+#     '''
+#     seed = 1234
+#     os.environ['PYTHONHASHSEED'] = str(seed)
+#     np.random.seed(seed) #numpy
+#     random.seed(seed) #random and transforms
+
+#     torch.manual_seed(seed) # cpu
+#     if torch.cuda.is_available():
+#         torch.cuda.manual_seed(seed) #gpu
+#         torch.cuda.manual_seed_all(seed) #all gpus
+#         # some cudnn methods can be random even after fixing the seeed unless you tell it to be deterministic 
+#         torch.backends.cudnn.benchmark = False
+#         torch.backends.cudnn.deterministic=True # cudnn
+#         torch.backends.cudnn.enabled = True
+#         # os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':16:8'
+#         # os.environ['CUBLAS_WORKSPACE_CONFIG']=':4096:8'
+#         torch.use_deterministic_algorithms(True)
+#     return seed
+
+def seed_everything(seed: int = 7):
+    random.seed(seed)
+    # os.environ['PYTHONHASHSEED'] = str(seed)  # 为了禁止hash随机化，使得实验可复现
+    # # # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # 使用gpu时若出错可以显示出错的具体地方，用了之后程序会卡住不动
+    # # os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
+    # os.environ['CUBLAS_WORKSPACE_CONFIG']=':4096:8'  # cuda版本大于10.2时，有些函数可能会有不确定过程，因此要加上这个
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)  # if you are using multi-GPU.
+    # torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.enabled = True
+    # torch.use_deterministic_algorithms(True) # 检测是否使用了随机算法，有使用随机算法就会报错，你需要一一解决
+    print(f"Random seed set as {seed}")
+    return seed
+
+# seed = seed_everything()
 
 class Logger(object):
     def __init__(self, outfile):
@@ -101,13 +145,18 @@ class BatchThreader:
         return min((self.prefetch_size + 1) * self.batch_size - len(self.async_result)
                    , len(self.left_args_list))
 
-
+    # 通过模拟卷积操作强制cudnn初始化
+    def __force_cudnn_initialization(self):
+        s = 32
+        dev = torch.device('cuda')
+        torch.nn.functional.conv2d(torch.zeros(s, s, s, s, device=dev), torch.zeros(s, s, s, s, device=dev))
 
     def pop_results(self):
 
         n_inwork = len(self.async_result)
 
         n_fetch = min(n_inwork, self.batch_size)
+        self.__force_cudnn_initialization()
         rtn = [self.async_result.pop(0).get()
                 for _ in range(n_fetch)]
 

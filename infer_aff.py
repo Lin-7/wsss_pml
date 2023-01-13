@@ -12,6 +12,11 @@ import scipy.misc
 import torch.nn.functional as F
 import os.path
 import os
+
+# from tool import pyutils
+# seed = pyutils.seed_everything()
+
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 def get_indices_in_radius(height, width, radius):
