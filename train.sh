@@ -1,17 +1,51 @@
 #!/bin/sh
 
-# python train_cls_loc_jointly_new.py --session_name=e5-patch_weight0.1-all-10patch_randomstart-fgmid0.4-seed7 --max_epoches=5 \
-#         --patch_gen=randompatch --patch_select_cri=fgratio --patch_select_ratio=0.4 --patch_select_part=mid --patch_loss_weight=0.1
 
-python train_cls_loc_jointly_new.py --session_name=e5-patch_weight0.05-all-10patch_randomstart-fgmid0.4-seed7 --max_epoches=5 \
-        --patch_gen=randompatch --patch_select_cri=fgratio --patch_select_ratio=0.4 --patch_select_part=mid --patch_loss_weight=0.05
-sleep 10s
-python train_cls_loc_jointly_new.py --session_name=e5-patch_weight0.04-all-10patch_randomstart-fgmid0.4-seed7 --max_epoches=5 \
-        --patch_gen=randompatch --patch_select_cri=fgratio --patch_select_ratio=0.4 --patch_select_part=mid --patch_loss_weight=0.04
-sleep 10s
-python train_cls_loc_jointly_new.py --session_name=e5-patch_weight0.06-all-10patch_randomstart-fgmid0.4-seed7 --max_epoches=5 \
-        --patch_gen=randompatch --patch_select_cri=fgratio --patch_select_ratio=0.4 --patch_select_part=mid --patch_loss_weight=0.06
-sleep 10s
+
+# # 2.4
+# python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-diversity_thres0.9-0.4-seed7-2.10 \
+#         --patch_gen=randompatch\
+#         --patch_select_cri=random --patch_select_ratio=0.4 --patch_select_checksimi=1 --patch_select_checksimi_thres=0.9\
+#         --patch_loss_weight=0.05 --max_epoches=3
+# sleep 10s
+
+# python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-diversity_thres0.9-0.4-seed7-2.6 \
+#         --patch_gen=randompatch\
+#         --patch_select_cri=random --patch_select_ratio=0.4 --patch_select_checksimi=1 --patch_select_checksimi_thres=0.9\
+#         --patch_loss_weight=0.05 --max_epoches=3
+# sleep 10s
+
+# python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-confidfront0.4-seed7 \
+#         --patch_gen=randompatch --patch_select_cri=confid --patch_select_ratio=0.4 --patch_select_part_confid=front\
+#         --patch_loss_weight=0.05 --max_epoches=3
+# sleep 10s
+# python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-confidmid0.4-seed7 \
+#         --patch_gen=randompatch --patch_select_cri=confid --patch_select_ratio=0.4 --patch_select_part_confid=mid\
+#         --patch_loss_weight=0.05 --max_epoches=3
+# sleep 10s
+# python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-confidback0.4-seed7 \
+#         --patch_gen=randompatch --patch_select_cri=confid --patch_select_ratio=0.4 --patch_select_part_confid=back\
+#         --patch_loss_weight=0.05 --max_epoches=3
+# sleep 10s
+
+# python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-0.3fgmid_confidback0.4-seed7 \
+#         --patch_gen=randompatch --patch_select_cri=fgAndconfid --patch_select_ratio=0.4 --patch_select_part_fg=mid --patch_select_part_confid=back\
+#         --patch_loss_weight=0.05 --max_epoches=3
+# sleep 10s
+# python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-0.3fgfront_confidback0.4-seed7 \
+#         --patch_gen=randompatch --patch_select_cri=fgAndconfid --patch_select_ratio=0.4 --patch_select_part_fg=front --patch_select_part_confid=back\
+#         --patch_loss_weight=0.05 --max_epoches=3
+# sleep 10s
+# python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-0.3fgback_confidback0.4-seed7 \
+#         --patch_gen=randompatch --patch_select_cri=fgAndconfid --patch_select_ratio=0.4 --patch_select_part_fg=back --patch_select_part_confid=back\
+#         --patch_loss_weight=0.05 --max_epoches=3
+# sleep 10s
+
+
+# python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-fgmid0.4-seed7-newcodetest \
+#         --patch_gen=randompatch --patch_select_cri=fgratio --patch_select_ratio=0.4 --patch_select_part_fg=mid\
+#         --patch_loss_weight=0.05 --max_epoches=3
+# sleep 10s
 
 # python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.001-all-10patch_randomstart-fgmid0.4-seed7 --max_epoches=3 \
 #         --patch_gen=randompatch --patch_select_cri=fgratio --patch_select_ratio=0.4 --patch_select_part=mid --patch_loss_weight=0.001

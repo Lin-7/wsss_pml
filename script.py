@@ -1,10 +1,25 @@
-# print("hello world!")
-import os
-import torch
-from voc12.datacopy import VOC12ClsDataset
-from torchvision import transforms
-with open('/usr/volume/WSSS/WSSS_PML/test2.txt', 'w') as f:
-    f.write("hello world!")
+dir1 = "/usr/volume/WSSS/WSSS_PML/distances_0.txt"
+dir2= "/usr/volume/WSSS/WSSS_PML/distances_1.txt"
+dists = []
+with open(dir1, 'r') as f:
+    for line in f.readlines():
+        dists.append(float(line.strip('\n')))
+with open(dir2, 'r') as f:
+    for line in f.readlines():
+        dists.append(float(line.strip('\n')))
+from matplotlib import pyplot as plt
+d = 0.1
+num_bins = 10
+plt.figure(figsize=(20,8), dpi=80)
+plt.hist(dists, bins=10)
+xticks = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
+plt.xticks(xticks)
+plt.grid(alpha=0.4)
+plt.savefig("/usr/volume/WSSS/WSSS_PML/distances_hist.jpg")
+print(dists)
+a =1
+
+
 '''
     修改图片预处理函数，对图片和gt_Seg同步调整大小
 '''

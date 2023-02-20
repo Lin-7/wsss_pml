@@ -117,7 +117,7 @@ class RoiPooling(Module):
         ymax = int(ymax)
         return mask[ymin:ymax, xmin:xmax]
 
-    def forward(self,feature_map, roi_batch, label_list, patch_nums, cam_predict, cam, cls_label, area_ratios=[]):
+    def forward(self,feature_map, roi_batch, label_list, patch_nums, norm_cam_bg, cls_label, area_ratios=[]):
         """
         getting pools from the roi batch
         :param feature_map:
@@ -135,9 +135,7 @@ class RoiPooling(Module):
         confidence_score = []
         patch_locs = []
 
-        # cam = F.relu(cam)
-        # cam=cam.mul(cls_label).cpu().numpy()
-        # norm_cam = cam / (np.max(cam, (1, 2), keepdims=True) + 1e-5)
+        cam_predict = np.argmax(norm_cam_bg, 0)
         
         for patch_num in patch_nums:
 
@@ -191,8 +189,13 @@ class RoiPooling(Module):
                     #     filter_mask.append(1)
 
                     # 计算patch的置信度分数
-                    # patch_cam = self.get_mask_region(norm_cam[region_label-1], region_dim_i)
-                    # confidence_score.append(patch_cam.mean())
+                    c_score = []
+                    region_cam_predict = self.get_mask_region(cam_predict, region_dim_i)
+                    label = np.unique(region_cam_predict)  # 0:bg
+                    for l in label:
+                        target_cam_region = self.get_mask_region(norm_cam_bg[l], region_dim_i)
+                        c_score.append(target_cam_region[region_cam_predict == l].mean())
+                    confidence_score.append(c_score.mean())
 
                     # 基于整个patch计算特征表示
                     region = self.get_region(map, region_dim_i)
@@ -225,7 +228,7 @@ class RoiPooling(Module):
         fg_pool=torch.cat(fg_pool,dim=0)
         nfg_pool=torch.cat(nfg_pool,dim=0)
 
-        return pool, pool_label_list, fg_score, patch_locs   # 检查patch locs的类型和格式--n*4的python数组
+        return pool, pool_label_list, [fg_score, confidence_score], patch_locs   # 检查patch locs的类型和格式--n*4的python数组
 
 
 class RoiPoolingRandom(Module):
@@ -333,7 +336,7 @@ class RoiPoolingRandom(Module):
         ymax = int(ymax)
         return mask[ymin:ymax, xmin:xmax]
 
-    def forward(self,feature_map, roi_batch, label_list, patch_nums = [4], cam_predict=[], cam=[], cls_label=[], area_ratios=[0.2, 0.3, 0.4, 0.5]):
+    def forward(self,feature_map, roi_batch, label_list, patch_nums = [4], norm_cam_bg=[], cls_label=[], area_ratios=[0.2, 0.3, 0.4, 0.5]):
         """
         getting pools from the roi batch
         :param feature_map:
@@ -341,16 +344,17 @@ class RoiPoolingRandom(Module):
         :return:
         """
         pool = []
-        fg_pool = []
         fg_score = []
+        confidence_score = []
         pool_label_list = []
         patch_locs = []
         W, H = feature_map.size(1), feature_map.size(2)
-        confidence_score = []
 
         random_times_base = 10   # 超参
         # iou_threshhold = 0.5  # 超参
         
+        cam_predict = np.argmax(norm_cam_bg, 0)
+
         # 预设面积
         for region_dim, region_label in zip(roi_batch, label_list):
             
@@ -361,6 +365,7 @@ class RoiPoolingRandom(Module):
             cur_pic_patches = []
             cur_patches_score = []
             cur_patches_fg_score = []
+            cur_patches_confid_score = []
             a_ratio = []
 
             # # fixed
@@ -426,8 +431,13 @@ class RoiPoolingRandom(Module):
                 #     fgpool.append(masked_region.sum(axis=(1,2)) / np.sum(region_mask == 1)) 
 
                 # 计算patch的置信度分数
-                # patch_cam = self.get_mask_region(norm_cam[region_label-1], region_dim_i)
-                # confidence_score.append(patch_cam.mean())      
+                c_score = []
+                region_cam_predict = self.get_mask_region(cam_predict, region_dim_i)
+                label = np.unique(region_cam_predict)  # 0:bg
+                for l in label:
+                    target_cam_region = self.get_mask_region(norm_cam_bg[l], region_dim_i)
+                    c_score.append(target_cam_region[region_cam_predict == l].mean())
+                cur_patches_confid_score.append(np.array(c_score).mean())    
 
             # # NMS
             # b = torch.from_numpy(np.array(cur_pic_patches,np.double)).cuda()
@@ -435,6 +445,18 @@ class RoiPoolingRandom(Module):
             # bounding_box_index = torchvision.ops.nms(b,s,iou_threshhold).cpu()
             # 检查一下NMS后的patches的面积占比（会不会小面积的都被大面积的抑制掉了）--不会，反而小尺寸的多 eg: 0.5, 0.5, 0.4, 0.4, 0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.3
             # print(np.array(a_ratio)[bounding_box_index])
+
+            # # === 统计随机生成的10个patch的分布情况 =====
+            # patches_start = np.array([[(temp[0]-xmin)/w,(temp[1]-ymin)/h] for temp in cur_pic_patches])
+            # patches_center = np.mean(patches_start, axis=0)
+            # # patches_center = np.tile(patches_center, (patches_start.shape[0], 1))
+            # distances = np.sqrt(np.sum((patches_start-patches_center)**2, axis=1))
+            # norm_mean_dist = np.mean(distances)
+            # device = torch.cuda.current_device()
+            # with open(f"/usr/volume/WSSS/WSSS_PML/distances_{device}.txt", "a") as f:
+            #     f.write(f"{norm_mean_dist:.4f}\n") 
+            # # === 统计随机生成的10个patch的分布情况 =====
+
             # noNMS
             bounding_box_index = range(len(cur_pic_patches))
 
@@ -447,6 +469,7 @@ class RoiPoolingRandom(Module):
                 patch_locs.append(region_dim_i)
                 pool_label_list.append(region_label)
                 fg_score.append(cur_patches_fg_score[i])
+                confidence_score.append(cur_patches_confid_score[i])
 
         # if not fg_pool:
         #     return [],[],[],[],[],[]
@@ -456,7 +479,7 @@ class RoiPoolingRandom(Module):
         pool=torch.cat(pool,dim=0)
         # fg_pool=torch.cat(fg_pool,dim=0)
 
-        return pool, pool_label_list, fg_score, patch_locs   # 检查patch locs的类型和格式--n*4的python数组
+        return pool, pool_label_list, [fg_score, confidence_score], patch_locs   # 检查patch locs的类型和格式--n*4的python数组
 
 class RoiPoolingContrastive(Module):
     def __init__(self, mode='tf', pool_size=(1, 1), args=""):
@@ -564,7 +587,7 @@ class RoiPoolingContrastive(Module):
         ymax = int(ymax)
         return mask[ymin:ymax, xmin:xmax]
 
-    def forward(self,feature_map, roi_batch, label_list, patch_nums = [4], cam_predict=[], cam=[], cls_label=[], area_ratios=[0.2, 0.3, 0.4, 0.5]):
+    def forward(self,feature_map, roi_batch, label_list, patch_nums = [4], norm_cam_bg=[], cls_label=[], area_ratios=[0.2, 0.3, 0.4, 0.5]):
         """
         getting pools from the roi batch
         :param feature_map:
@@ -582,6 +605,8 @@ class RoiPoolingContrastive(Module):
         random_times_base = 10   # 超参
         # iou_threshhold = 0.5  # 超参
         
+        cam_predict = np.argmax(norm_cam_bg, 0)
+
         # 预设面积
         for region_dim, region_label in zip(roi_batch, label_list):
             

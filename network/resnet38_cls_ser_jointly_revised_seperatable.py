@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 from voc12.data import get_img_path
 from tool.imutils import reNormalize
 
+from scipy import stats
+
 # from tool import pyutils
 # seed = pyutils.seed_everything()
 
@@ -98,7 +100,8 @@ class Net(network.resnet38d.Net):
         # 规范化之后把背景类的cam补上
         norm_cam = cam / (np.max(cam, (1, 2), keepdims=True) + 1e-5)
         bg_score = [np.ones_like(norm_cam[0]) * bg_threshold]
-        cam_predict = np.argmax(np.concatenate((bg_score, norm_cam)), 0)
+        norm_cam_bg = np.concatenate((bg_score, norm_cam))
+        cam_predict = np.argmax(norm_cam_bg, 0)
 
         label = np.unique(cam_predict)
         label = label[1:]  # get the label except background
@@ -159,7 +162,7 @@ class Net(network.resnet38d.Net):
                         # print("2")
                         # return roi_index, label_list
                         break
-        return roi_index, label_list, cam_predict  # 这里的坐标先横轴再纵轴
+        return roi_index, label_list, norm_cam_bg  # 这里的坐标先横轴再纵轴
 
     # 算两个feature map的欧几里得距离; 在metric learning中用的
     def euclidean_dist(self,x, y):
@@ -183,6 +186,126 @@ class Net(network.resnet38d.Net):
         # clamp()函数可以限定dist内元素的最大最小范围，dist最后开方，得到样本之间的距离矩阵
         dist = dist.clamp(min=1e-12).sqrt()  # for numerical stability
         return dist
+    
+    def evaluate_patches(self, fg_ratio, confid, args):
+        '''
+        author: linqing
+        date: 20230113
+        params:
+            fg_ratio: 前景占比的分数数组
+            confid: 置信度分数数组
+            args: 选择patch的相关参数
+
+        return:
+            scores: 每个patch的评估分数
+        '''
+        if args.patch_select_cri == "fgratio" or args.patch_select_cri == "fgAndconfid":
+            if args.patch_select_part_fg == "front":
+                fg_scores = stats.norm.pdf(fg_ratio, loc=1, scale=1)
+            elif args.patch_select_part_fg == "mid":
+                fg_scores = stats.norm.pdf(fg_ratio, loc=0.5, scale=1)
+            elif args.patch_select_part_fg == "back":
+                fg_scores = stats.norm.pdf(fg_ratio, loc=0, scale=1)
+            else:
+                raise ValueError(f"'patch_select_part_fg' must be front, mid or back. But now 'patch_select_part_fg' is {args.patch_select_part_fg}!!!!")
+        
+        if args.patch_select_cri == "confid" or args.patch_select_cri == "fgAndconfid":
+            if args.patch_select_part_confid == "front":
+                confid_scores = stats.norm.pdf(confid, loc=1, scale=1)
+            elif args.patch_select_part_confid == "mid":
+                confid_scores = stats.norm.pdf(confid, loc=0.5, scale=1)
+            elif args.patch_select_part_confid == "back":
+                confid_scores = stats.norm.pdf(confid, loc=0, scale=1)
+            else:
+                raise ValueError(f"'patch_select_part_confid' must be front, mid or back. But now 'patch_select_part_confid' is {args.patch_select_part_fg}!!!!")
+            
+        if args.patch_select_cri == "fgratio":
+            return fg_scores
+        elif args.patch_select_cri == "confid":
+            return confid_scores
+        else:
+            return (0.3*fg_scores+confid_scores)/2
+    
+    def sigmoid_func(self, x):
+        return 1/(1+np.exp(-x))
+
+    # 计算特征向量两两之间的相似度并保存，用于设置选择阈值
+    def lookatsimilarity(self, patch_features):
+        simi_metric = torch.zeros([len(patch_features), len(patch_features)])
+        for i in range(len(patch_features)):
+            for j in range(i, len(patch_features)):
+                simivale = torch.norm(patch_features[i]-patch_features[j], p=2).cpu().detach()
+                # 数值范围很大，先映射到0.5-1之间
+                # simi_metric[i][j] = self.sigmoid_func(simivale)/0.5-1  # sigmoid超过10就是1，绝大部分都是1
+                simi_metric[i][j] = self.sigmoid_func(simivale-10)
+                # simi_metric[i][j] = self.sigmoid_func(simivale)
+        file_dir = f"/usr/volume/WSSS/WSSS_PML/eulur_simi.txt"
+        with open(file_dir, "a") as file:
+            file.write(str(simi_metric))
+            file.write("\n")
+
+    # 需要指定阈值，但可以基于fg或者confid分数挑选patch
+    def select_at_low_similarity_with_score(self, patch_features, indexs, selected_num, threshold):
+        assert patch_features.size(0)==len(indexs), f"When select patches according to their\
+        similarity, the original indexs must match to the amount of patch_features. But now \
+        the amount of patch_features is {patch_features.size(0)}, while given {len(indexs)} indexs."
+        
+        selected_indexs = []
+        cur_idx = 0
+        # 每次新加入一个直到满足所需的数量
+        for cur_idx in range(len(indexs)):
+            cur_distance = 10000
+            if selected_indexs == []:
+                selected_indexs.append(cur_idx)
+                continue
+            for idx in selected_indexs:
+                simivale = torch.norm(patch_features[idx]-patch_features[cur_idx], p=2).cpu().detach()
+                cur_dist = self.sigmoid_func(simivale)
+
+                cur_distance = min(cur_dist, cur_distance)
+            if cur_distance > threshold:
+                selected_indexs.append(cur_idx)
+
+            if len(selected_indexs) >= selected_num:
+                break
+        
+        # 如果所有的patch都比对后，选择的patch还不够，也直接返回
+
+        return selected_indexs
+    
+    # 不需要指定阈值，但无法与fg分数和confid分数配合使用
+    def select_at_low_similarity(self, patch_features, select_num):
+        
+        size = patch_features.size(0)
+        selected_indexs = [0]
+        dist_with_selecteds = torch.zeros(size)
+
+        for idx in range(1, size):
+            dist_with_selecteds[idx] = torch.norm(patch_features[idx]-patch_features[0], p=2)
+
+        for _ in range(1, select_num):
+            cur_select_idx = -1
+            # find the least similar one
+            for idx in range(size):
+                if dist_with_selecteds[idx]==0: 
+                    continue
+                if cur_select_idx == -1:
+                    cur_select_idx = idx
+                    continue
+                if dist_with_selecteds[idx] > dist_with_selecteds[cur_select_idx]:
+                    cur_select_idx = idx
+            selected_indexs.append(cur_select_idx)
+            dist_with_selecteds[cur_select_idx] = 0
+            # update the rest info 
+            for idx in range(size):
+                if dist_with_selecteds[idx] == 0:
+                    continue
+                temp_simi = torch.norm(patch_features[idx]-patch_features[cur_select_idx], p=2)
+                if temp_simi < dist_with_selecteds[idx]:
+                    dist_with_selecteds[idx] = temp_simi
+
+        return selected_indexs
+
 
     # 基于得到的bounding box和label, 变成feature vector后计算metric learning loss
     # patch_nums=[1, 4, 9, 16, 25]
@@ -198,38 +321,20 @@ class Net(network.resnet38d.Net):
         fg_roi_cls_feature_vector = []
         nfg_roi_cls_feature_vector = []
         img_ids = []
-        scores = []
+        fgscores = []
+        confidscores = []
         patch_locs = []
         triplet_info = []
         patch_embs = []
-
-        # # 将图片坐标转换为特征图上的坐标
-        # f2i_scale_w = patch_w/img.size(2)
-        # f2i_scale_h = patch_h/img.size(3)
-        # gt_bbx_mask = []
-        # for b_idx in range(len(bboxes)):
-        #     bboxes[b_idx][0] *= f2i_scale_w
-        #     bboxes[b_idx][1] *= f2i_scale_h
-        #     bboxes[b_idx][2] *= f2i_scale_w
-        #     bboxes[b_idx][3] *= f2i_scale_h
-        #     bw = bboxes[b_idx][2]-bboxes[b_idx][0]
-        #     bh = bboxes[b_idx][3]-bboxes[b_idx][1]
-        #     if bw < 9 or bh < 9 or (bh / bw) > 4 or (bw / bh) > 4:
-        #         gt_bbx_mask.append(0)
-        #     else:
-        #         gt_bbx_mask.append(1)
-        # gt_bbx_mask = np.array(gt_bbx_mask)
-        # bboxes = bboxes[gt_bbx_mask==1]
-        # bbxs_cls = bbxs_cls[gt_bbx_mask==1]
-        # bbxs_img = bbxs_img[gt_bbx_mask==1]
         proposal_num = 0 
         
         for i in range(N_f):# for 每张图片
             # 确定boundingbox
             if is_same_img:
-                roi_index, label_list = self.get_roi_index_patch_same_image(cam_wo_dropout1[i].detach(), label[i])
+                # roi_index, label_list = self.get_roi_index_patch_same_image(cam_wo_dropout1[i].detach(), label[i])
+                roi_index, label_list, norm_cam_bg = self.get_roi_index(cam_wo_dropout1[i].detach(), label[i], args.proposal_padding)
             else:
-                roi_index, label_list, mask_predict = self.get_roi_index(cam_wo_dropout1[i].detach(), label[i], args.proposal_padding)   # 检查最大值是否与特征图长度一致--是的
+                roi_index, label_list, norm_cam_bg = self.get_roi_index(cam_wo_dropout1[i].detach(), label[i], args.proposal_padding)   # 检查最大值是否与特征图长度一致--是的
                 # label_list中label范围1-20
                 # bbox_idxs = bbxs_img==i
                 # roi_index = bboxes[bbox_idxs]
@@ -239,11 +344,17 @@ class Net(network.resnet38d.Net):
                 proposal_num += len(label_list)
                 roi_cls_pooled, roi_label_list, score_list, p_locs \
                     = self.roi_pooling(feature_map=x_patch[i], roi_batch=roi_index, label_list=label_list, \
-                        patch_nums=patch_nums, cam_predict=mask_predict, cam=cam_wo_dropout1[i].detach(), cls_label=label[i])  # predict roi_cls_label
+                        patch_nums=patch_nums, norm_cam_bg=norm_cam_bg, cls_label=label[i])  # predict roi_cls_label
 
                 if len(roi_cls_pooled) > 0:
-
-                    scores.extend(score_list)
+                    
+                    if len(score_list)==1:
+                        fgscores.extend(score_list)
+                    elif len(score_list)==2:
+                        fgscores.extend(score_list[0])
+                        confidscores.extend(score_list[1])
+                    else:
+                        raise ValueError(f"len(score_list) is {len(score_list)}, but it must be 1 or 2!")
                     roi_cls_feature_vector.append(roi_cls_pooled)
                     # fg_roi_cls_feature_vector.append(fg_roi_cls_pooled)
                     # nfg_roi_cls_feature_vector.append(nfg_roi_cls_pooled)
@@ -270,27 +381,35 @@ class Net(network.resnet38d.Net):
             # fg_patch_embs = torch.cat(fg_roi_cls_feature_vector, 0)
             # nfg_patch_embs = torch.cat(nfg_roi_cls_feature_vector, 0)
 
-            # 以batch中的所有图片为单位挑patch
-            # 按分数(前景占比,置信度）选择指定比例的patches
-            sorted_idxes = np.argsort(scores)[::-1]   # 按分数(前景占比,置信度）降序排序
-            As = proposal_num * 4 * args.patch_select_ratio
-            Ag = len(patch_labels)
-            if args.patch_select_part == "front":
-                indexs = np.sort(sorted_idxes[:int(As)].copy())
-            elif args.patch_select_part == "mid":
-                bgn = (Ag-As)/2/Ag
-                end = 1-bgn
-                if(end<=bgn):
-                    raise ValueError("end must greater than bgn!!!!")
-                bgn_idx = int((Ag - As)/2)
-                indexs = np.sort(sorted_idxes[bgn_idx:bgn_idx+int(As)].copy())
-            elif args.patch_select_part == "back":
-                indexs = np.sort(sorted_idxes[-int(As):].copy())
-            elif args.patch_select_part == "random":
-                indexs = np.random.choice(range(len(scores)), size=int(As), replace=False, p=None)
+            # ============ 挑patches ========================
+            if args.patch_select_close:
+                indexs = range(len(patch_labels))
             else:
-                raise ValueError(f"'patch_select_part' must be front, mid, back or random. But now 'patch_select_part' is {args.patch_select_part}!!!!")
-            
+                As = proposal_num * 4 * args.patch_select_ratio
+                Ag = len(patch_labels)
+                # 以batch中的所有图片为单位挑patch
+                if args.patch_select_cri == "random":
+                    # if args.patch_select_checksimi:
+                    #     ori_indexs = np.random.choice(range(Ag), size=int(Ag), replace=False, p=None)
+                    #     indexs = np.sort(self.select_at_low_similarity_with_score(patch_embs, ori_indexs, As, args.patch_select_checksimi_thres))
+                    #     # indexs = np.sort(self.select_at_low_similarity(patch_embs, int(As)))
+                    # else:
+                    #     # self.lookatsimilarity(patch_embs)
+                    #     indexs = np.sort(np.random.choice(range(Ag), size=int(As), replace=False, p=None))
+                    indexs = np.sort(np.random.choice(range(Ag), size=int(As), replace=False, p=None))
+                else:
+                    # 按分数(前景占比,置信度）选择指定比例的patches
+                    scores = self.evaluate_patches(fgscores, confidscores, args=args)
+                    sorted_idxes = np.argsort(scores)[::-1]   # 按分数(前景占比,置信度）降序排序
+                    # if args.patch_select_checksimi:
+                    #     # indexs = np.sort(self.select_at_low_similarity(patch_embs, int(As)))
+                    #     indexs = np.sort(self.select_at_low_similarity_with_score(patch_embs, sorted_idxes, As, args.patch_select_checksimi_thres))
+                    # else:
+                    #     # self.lookatsimilarity(patch_embs)
+                    #     indexs = np.sort(sorted_idxes[:int(As)].copy())
+                    indexs = np.sort(sorted_idxes[:int(As)].copy())
+            # ============ 挑patches ========================
+
             # 选择所有的patches
             # indexs = range(len(scores))
             patch_mask = np.zeros(len(patch_labels))
@@ -306,6 +425,7 @@ class Net(network.resnet38d.Net):
             patch_embs = patch_embs.detach()
 
             n = patch_embs_select.size(0)  
+            
             # =============== euclidean distance + triplet loss with hard sample mining ===============
 
             # try to use metric learning lib directly : the function below use cosine similarity
@@ -326,12 +446,14 @@ class Net(network.resnet38d.Net):
 
         dist_ap, dist_an = [], []
 
+        pass_neg = 0
+        pass_pos = 0
         for i in range(n):
-            if patch_labels_select[i].item()==100:
-                continue
+            # if patch_labels_select[i].item()==100:
+            #     continue
+
             if is_same_img:
-                # neg_idx=~mask[i] & img_mask[i]
-                neg_mask=~mask[i]
+                neg_mask= ~mask[i] & img_mask[i]
                 neg_idx=torch.tensor(range(len(neg_mask)))[neg_mask==1]
             else:
                 neg_mask=~mask[i]
@@ -339,19 +461,24 @@ class Net(network.resnet38d.Net):
             an_i = distance[i][neg_mask]
             # an_i = fg_distance[i][neg_idx]
             if an_i.size(0) == 0:
+                pass_neg += 1
                 continue
+
             if is_same_img:
-                # pos_idx=mask[i] & img_mask[i] # 这个限制了学习图片之前的同类别相似性
-                pos_mask=mask[i]
+                pos_mask= mask[i] & ~img_mask[i] # 这个限制了学习图片之前的同类别相似性
                 pos_idx=torch.tensor(range(len(pos_mask)))[pos_mask==1]
             else:
                 pos_mask=mask[i]
                 pos_idx=torch.tensor(range(len(pos_mask)))[pos_mask==1]
+            ap_i = distance[i][pos_mask]
+            if ap_i.size(0) == 0:
+                pass_pos += 1
+                continue
+
             if is_hard_negative:
-                dist_ap.append(distance[i][pos_mask].max().unsqueeze(0))
-                # dist_ap.append(fg_distance[i][pos_mask].max().unsqueeze(0))
+                dist_ap.append(ap_i.max().unsqueeze(0))
                 dist_an.append(an_i.min().unsqueeze(0))
-                p_idx = distance[i][pos_mask].argmax()
+                p_idx = ap_i.argmax()
                 n_idx = an_i.argmin()
             else:
                 p_idx = random.randint(0, distance[i][pos_mask].shape[0]-1)
@@ -364,6 +491,19 @@ class Net(network.resnet38d.Net):
             
             # 记录的是三元组中anchor positive negative各自对应的在当前batch的所有patch下的下标
             triplet_info.append((indexs[i], indexs[pos_idx[p_idx]], indexs[neg_idx[n_idx]]))
+
+        
+        # === 记录用于构造triplet的patches总数以及没有负正对的patches总数 =====
+        device = torch.cuda.current_device()
+        with open(f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_{device}.txt", "a") as f:
+            f.write(f"{n} ") 
+            
+        with open(f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_{device}.txt", "a") as f:
+            f.write(f"{pass_neg} ") 
+            
+        with open(f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_{device}.txt", "a") as f:
+            f.write(f"{pass_pos}\n") 
+        # === 记录用于构造triplet的patches总数以及没有负正对的patches总数 =====
 
         '''
         # TODO: 还没完成的一些选triplet的尝试
@@ -440,7 +580,8 @@ class Net(network.resnet38d.Net):
         if len(dist_ap)>0:
             # 可视化当前batch的patches
             if epoch_iter!="null":
-                self.visualize_batch_patches(img.detach().cpu(), img_names, patch_locs, img_ids.cpu(), patch_labels.cpu(), patch_mask.cpu(), scores, triplet_info, args, epoch_iter)   # 把cuda上的东西都放到cpu上，在计算图中的都detach下来
+                self.visualize_batch_patches(img.detach().cpu(), img_names, patch_locs, img_ids.cpu(), \
+                    patch_labels.cpu(), patch_mask.cpu(), scores, triplet_info, args, epoch_iter)   # 把cuda上的东西都放到cpu上，在计算图中的都detach下来
 
             dist_ap = torch.cat(dist_ap, 0)
             dist_an = torch.cat(dist_an, 0)
@@ -456,8 +597,8 @@ class Net(network.resnet38d.Net):
         else:
             return torch.tensor(0.0).cuda(), patch_embs, patch_labels, patch_mask
 
-    def forward(self, x, bounding_box=None, label=None, img_names=[], param=None, is_patch_metric=True, patch_nums=[4],is_sse=False,featuremap=False, \
-        patches=False, epoch_iter="null", args=""):
+    def forward(self, x, bounding_box=None, label=None, img_names=[], param=None, is_patch_metric=True, \
+                    patch_nums=[4],is_sse=False,featuremap=False, patches=False, epoch_iter="null", args=""):
 
         N, C, W, H = x.size()
         img = x
@@ -480,10 +621,10 @@ class Net(network.resnet38d.Net):
             patches_list, label_list = [], []
             x2 = x2.detach()
             for i in range(x2.size(0)):
-                proposals, proposal_labels, mask_predict = self.get_roi_index(x2[i], label[i])
+                proposals, proposal_labels, norm_cam_bg = self.get_roi_index(x2[i], label[i])
 
                 if len(proposal_labels)>0:
-                    roi_cls_pooled, roi_label_list = self.roi_pooling(x_patch[i], proposals, proposal_labels, patch_nums, mask_predict)
+                    roi_cls_pooled, roi_label_list = self.roi_pooling(x_patch[i], proposals, proposal_labels, patch_nums, norm_cam_bg)
                     
                     if len(roi_cls_pooled)>0:
                         patches_list.append(roi_cls_pooled.detach().cpu().numpy())
@@ -517,13 +658,17 @@ class Net(network.resnet38d.Net):
                             bbxs_img.append(i-device*N)
 
                 patch_metric_loss, patch_embs, patch_labels, patch_mask\
-                    =self.patch_based_metric_loss(img, x_patch, label, np.array(bboxes), np.array(bbxs_cls), np.array(bbxs_img), is_same_img=False, is_hard_negative=True, epoch_iter=epoch_iter, img_names=img_names, args=args)
+                    =self.patch_based_metric_loss(img, x_patch, label, np.array(bboxes), np.array(bbxs_cls), \
+                            np.array(bbxs_img), is_same_img=True, is_hard_negative=True, epoch_iter=epoch_iter, \
+                            img_names=img_names, args=args)
+
                 # patch_metric_loss=self.patch_based_metric_loss_cam(x2, label, is_same_img=True)
                 # patch_metric_loss_9=self.patch_based_metric_loss(x_wo_dropout, label,patch_num=9,)
                 # patch_metric_loss_same_img=self.patch_based_metric_loss(x_wo_dropout, label, is_same_img=True)
                 # patch_loss= (patch_metric_loss+patch_metric_loss_same_img)/2
                 # patch_metric_loss= patch_metric_loss_same_img
                 # patch_metric_loss= patch_metric_loss_same_img
+
                 return [loss_cls, patch_metric_loss, patch_embs, patch_labels, patch_mask]
 
         else:

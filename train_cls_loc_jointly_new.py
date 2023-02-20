@@ -7,7 +7,7 @@ import os
 import torch
 import random
 import numpy as np
-
+torch.set_printoptions(profile="full")
 torch.manual_seed(7) # cpu
 torch.cuda.manual_seed(7) #gpu
 np.random.seed(7) #numpy
@@ -83,14 +83,18 @@ if __name__ == '__main__':
     parser.add_argument("--crop_size", default=448, type=int)
     parser.add_argument("--optimizer", default='poly', type=str)
 
-    # patch生成相关的参数
-    parser.add_argument("--patch_gen", default="contrastivepatch", type=str)   # 4patch randompatch contrastivepatch
+    # patch相关的参数
+    parser.add_argument("--patch_gen", default="randompatch", type=str)   # 4patch randompatch contrastivepatch
     parser.add_argument("--ccrop_alpha", default=0.7, type=float)
-    parser.add_argument("--patch_select_cri", default="fgratio", type=str)   # fgratio confid
+    parser.add_argument("--patch_select_close", default=True, type=bool)   # 不选择patches
+    parser.add_argument("--patch_select_cri", default="random", type=str)   # fgratio confid fgAndconfid random
     parser.add_argument("--patch_select_ratio", default=0.4, type=float)   # 0.3 0.4 0.5
-    parser.add_argument("--patch_select_part", default="mid", type=str)   # front mid back random
+    parser.add_argument("--patch_select_part_fg", default="mid", type=str)   # front mid back
+    parser.add_argument("--patch_select_part_confid", default="front", type=str)   # front mid back
+    # parser.add_argument("--patch_select_checksimi", default=True, type=bool)   # 选择patches的时候考虑内容相似性
+    # parser.add_argument("--patch_select_checksimi_thres", default=0.9, type=float)
     parser.add_argument("--proposal_padding", default=0, type=float)
-    parser.add_argument("--patch_loss_weight", default=0.1, type=float)
+    parser.add_argument("--patch_loss_weight", default=0.05, type=float)
 
     parser.add_argument("--session_name", default="test", type=str)         # train val test
     # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-randompatch-fgmid0.5-Sp0.3-noNp10-noNMS-11", type=str)         # train val test
@@ -265,53 +269,54 @@ if __name__ == '__main__':
     rw, rh = [448, 448]
     
     # training
+    patchnums, npatchnums, ppatchnums = [], [], []
     for ep in range(args.max_epoches):
         itr = ep + 1
         # log the images at the beginning of each epoch
         
-        # for iter, pack in enumerate(tensorboard_img_loader):
-        #     tensorboard_img = pack[1]
-        #     tensorboard_label = pack[2].cuda(non_blocking=True)
-        #     tensorboard_label = tensorboard_label.unsqueeze(2).unsqueeze(3)
-        #     N, C, H, W = tensorboard_img.size()
-        #     img_8 = tensorboard_img[0].numpy().transpose((1, 2, 0))
-        #     img_8 = np.ascontiguousarray(img_8)  # 将一个内存不连续存储的数组转换为内存连续存储的数组，使得运行速度更快
-        #     mean = (0.485, 0.456, 0.406)
-        #     std = (0.229, 0.224, 0.225)
-        #     img_8[:, :, 0] = (img_8[:, :, 0] * std[0] + mean[0]) * 255
-        #     img_8[:, :, 1] = (img_8[:, :, 1] * std[1] + mean[1]) * 255
-        #     img_8[:, :, 2] = (img_8[:, :, 2] * std[2] + mean[2]) * 255
-        #     img_8[img_8 > 255] = 255
-        #     img_8[img_8 < 0] = 0
-        #     img_8 = img_8.astype(np.uint8)
+        '''
+        for iter, pack in enumerate(tensorboard_img_loader):
+            tensorboard_img = pack[1]
+            tensorboard_label = pack[2].cuda(non_blocking=True)
+            tensorboard_label = tensorboard_label.unsqueeze(2).unsqueeze(3)
+            N, C, H, W = tensorboard_img.size()
+            img_8 = tensorboard_img[0].numpy().transpose((1, 2, 0))
+            img_8 = np.ascontiguousarray(img_8)  # 将一个内存不连续存储的数组转换为内存连续存储的数组，使得运行速度更快
+            mean = (0.485, 0.456, 0.406)
+            std = (0.229, 0.224, 0.225)
+            img_8[:, :, 0] = (img_8[:, :, 0] * std[0] + mean[0]) * 255
+            img_8[:, :, 1] = (img_8[:, :, 1] * std[1] + mean[1]) * 255
+            img_8[:, :, 2] = (img_8[:, :, 2] * std[2] + mean[2]) * 255
+            img_8[img_8 > 255] = 255
+            img_8[img_8 < 0] = 0
+            img_8 = img_8.astype(np.uint8)
 
-        #     input_img = img_8.transpose((2, 0, 1))            # tensorboard_img[0] → img_8 → input_img(规范化且内存连续)
-        #     h = H // 4
-        #     w = W // 4
-        #     model.eval()
-        #     with torch.no_grad():
-        #         cam = model(x=tensorboard_img,args=args)
-        #     model.train()
-        #     # Down samples the input to the given size
-        #     p = F.interpolate(cam, (h, w), mode=args.interpolate_mode, align_corners=False)[0].detach().cpu().numpy()     
-        #     bg_score = np.zeros((1, h, w), np.float32)
-        #     p = np.concatenate((bg_score, p), axis=0)  # 追加背景cam
-        #     bg_label = np.ones((1, 1, 1), np.float32)
-        #     l = tensorboard_label[0].detach().cpu().numpy()
-        #     l = np.concatenate((bg_label, l), axis=0)   # 追加背景标签
-        #     # Donotunderstand: w, h ？ 
-        #     image = cv2.resize(img_8, (w, h), interpolation=cv2.INTER_CUBIC).transpose((2, 0, 1))   # chw
-        #     # 应该是可视化图片
-        #     CLS, CAM, CLS_crf, CAM_crf = visualization.generate_vis(p, l, image,
-        #                                                             func_label2color=visualization.VOClabel2colormap)
-        #     tblogger.add_image('Image_' + str(iter), input_img, itr)
-        #     tblogger.add_image('CLS_' + str(iter), CLS, itr)
-        #     tblogger.add_image('CLS_crf' + str(iter), CLS_crf, itr)
-        #     tblogger.add_images('CAM_' + str(iter), CAM, itr)
-
+            input_img = img_8.transpose((2, 0, 1))            # tensorboard_img[0] → img_8 → input_img(规范化且内存连续)
+            h = H // 4
+            w = W // 4
+            model.eval()
+            with torch.no_grad():
+                cam = model(x=tensorboard_img,args=args)
+            model.train()
+            # Down samples the input to the given size
+            p = F.interpolate(cam, (h, w), mode=args.interpolate_mode, align_corners=False)[0].detach().cpu().numpy()     
+            bg_score = np.zeros((1, h, w), np.float32)
+            p = np.concatenate((bg_score, p), axis=0)  # 追加背景cam
+            bg_label = np.ones((1, 1, 1), np.float32)
+            l = tensorboard_label[0].detach().cpu().numpy()
+            l = np.concatenate((bg_label, l), axis=0)   # 追加背景标签
+            # Donotunderstand: w, h ？ 
+            image = cv2.resize(img_8, (w, h), interpolation=cv2.INTER_CUBIC).transpose((2, 0, 1))   # chw
+            # 应该是可视化图片
+            CLS, CAM, CLS_crf, CAM_crf = visualization.generate_vis(p, l, image,
+                                                                    func_label2color=visualization.VOClabel2colormap)
+            tblogger.add_image('Image_' + str(iter), input_img, itr)
+            tblogger.add_image('CLS_' + str(iter), CLS, itr)
+            tblogger.add_image('CLS_crf' + str(iter), CLS_crf, itr)
+            tblogger.add_images('CAM_' + str(iter), CAM, itr)
+        '''
 
         #     # print("Epoch %s: " % str(ep), "%.2fs" % (timer.get_stage_elapsed()))
-
         #     timer.reset_stage()
  
         patches = []
@@ -384,7 +389,7 @@ if __name__ == '__main__':
                 loss_list.append(avg_meter.get('loss'))
 
                 print('Iter:%5d/%5d' % (global_step - 1, max_step),
-                      'Loss_cls: %.4f' % (avg_meter.get('loss')),
+                      'Loss: %.4f' % (avg_meter.get('loss')),
                       'Loss_cls: %.4f:'%(avg_meter1.get('loss_cls')),
                       'Loss_patch: %.4f:' % (avg_meter2.get('loss_patch')),
                       'imps:%.3f' % ((iter+1) * args.batch_size / timer.get_stage_elapsed()),
@@ -393,6 +398,59 @@ if __name__ == '__main__':
                 avg_meter.pop()
             
         print(f"epoch{ep} end!!!!!!!!!!!!!!!!!!!")
+
+        # ==== 附加内容:统计用于构造triplet的patches总数以及没有负正对的patches总数 ======
+        dir1 = "/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_0.txt"
+        dir2= "/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_1.txt"
+        newname1 = f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_0-epoch{ep}.txt"
+        newname2 = f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_1-epoch{ep}.txt"
+        num, num1, num2 = 0, 0, 0
+        with open(dir1, 'r') as f:
+            for line in f.readlines():
+                tnum, tnum1, tnum2 = line.strip('\n').split()
+                num += int(tnum)
+                num1 += int(tnum1)
+                num2 += int(tnum2)
+        with open(dir2, 'r') as f:
+            for line in f.readlines():
+                tnum, tnum1, tnum2 = line.strip('\n').split()
+                num += int(tnum)
+                num1 += int(tnum1)
+                num2 += int(tnum2)
+        os.rename(dir1,newname1)
+        os.rename(dir2,newname2)
+        patchnums.append(num)
+        npatchnums.append(num1)
+        ppatchnums.append(num2)
+        # ==== 附加内容:统计用于构造triplet的patches总数以及没有负正对的patches总数 ======
+
+        ''' 
+        # ==== 附加内容:统计随机生成的10个patch的分布情况 ======
+        # dir1 = "/usr/volume/WSSS/WSSS_PML/distances_0.txt"
+        # dir2= "/usr/volume/WSSS/WSSS_PML/distances_1.txt"
+        # newname1 = f"/usr/volume/WSSS/WSSS_PML/distances_0-epoch{ep}.txt"
+        # newname2 = f"/usr/volume/WSSS/WSSS_PML/distances_1-epoch{ep}.txt"
+        # dists = []
+        # with open(dir1, 'r') as f:
+        #     for line in f.readlines():
+        #         dists.append(float(line.strip('\n')))
+        # with open(dir2, 'r') as f:
+        #     for line in f.readlines():
+        #         dists.append(float(line.strip('\n')))
+        # os.rename(dir1,newname1)
+        # os.rename(dir2,newname2)
+        # from matplotlib import pyplot as plt
+        # d = 0.1
+        # num_bins = 10
+        # plt.figure(figsize=(20,8), dpi=80)
+        # plt.hist(dists, bins=10)
+        # xticks = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
+        # plt.xticks(xticks)
+        # plt.grid(alpha=0.4)
+        # plt.savefig(f"/usr/volume/WSSS/WSSS_PML/distances_hist-epoch{ep}.jpg")
+        # ==== 附加内容:统计随机生成的10个patch的分布情况 ======
+        '''
+
         if args.optimizer=='adam':
             optimizer.adam_turn_step()
 
@@ -540,5 +598,25 @@ if __name__ == '__main__':
                 # eval(f"/usr/volume/WSSS/WSSS_PML/voc12/train_mini_fortest.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
                 #     detail_txt=args.log_infer_cls_detail, visualize_dir=visualize_dir, cams_dir=args.out_cam, \
                 #         model_name=args.weights, bg_threshold=background_threshold)
+
+    
+    from matplotlib import pyplot as plt
+    width=0.3
+    x = np.arange(3)
+    x1 = x-width/2
+    x2 = x1 + width
+    x3 = x2 + width
+    plt.bar(x1, patchnums, width=width, label="total")
+    plt.bar(x2, npatchnums, width=width, label="NoNeg")
+    plt.bar(x3, ppatchnums, width=width, label="NoPos")
+    plt.ylabel("nums")
+    for a,b in zip(x1, patchnums):
+        plt.text(a, b, f"{b}", ha='center', va='bottom', fontsize=7)
+    for a,b in zip(x2, npatchnums):
+        plt.text(a, b, f"{b}", ha='center', va='bottom', fontsize=7)
+    for a,b in zip(x3, ppatchnums):
+        plt.text(a, b, f"{b}", ha='center', va='bottom', fontsize=7)
+    plt.xticks(x, ["epoch0", "epoch1", "epoch2"])
+    plt.savefig(f"/usr/volume/WSSS/WSSS_PML/patches-condition.jpg")
 
     print("Session finished:{}".format(time.ctime(time.time())))
