@@ -1,6 +1,20 @@
 #!/bin/sh
+# 3.3
+python train_cls_loc_jointly_new.py --session_name=test0302-randomGen-noSelect-q500-bgH \
+        --patch_gen=randompatch --patch_select_close=True --queuesize=500 --bghard=True
+sleep 10s
 
+# python train_cls_loc_jointly_new.py --session_name=test0302-randomGen-noSelect-q1300-bgH \
+#         --patch_gen=randompatch --patch_select_close=True --queuesize=1300 --bghard=True
+# sleep 10s
 
+# python train_cls_loc_jointly_new.py --session_name=test0302-randomGen-noSelect-q500-bgH \
+#         --patch_gen=randompatch --patch_select_close=True --queuesize=500 --bghard=True
+# sleep 10s
+
+# python train_cls_loc_jointly_new.py --session_name=test0302-randomGen-noSelect-q1500-bgH \
+#         --patch_gen=randompatch --patch_select_close=True --queuesize=1500 --bghard=True
+# sleep 10s
 
 # # 2.4
 # python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-diversity_thres0.9-0.4-seed7-2.10 \

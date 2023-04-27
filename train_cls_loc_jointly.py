@@ -38,7 +38,7 @@ def worker_init_fn(worker_id):
 if __name__ == '__main__':
     '''
         !!! 训练和评估是一起执行的，因此训练的时候确定batch_size时要给评估留时间
-        ！！　batch_size和num_worker都要调整
+        !!　batch_size和num_worker都要调整
     '''
 
     parser = argparse.ArgumentParser()

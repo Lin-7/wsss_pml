@@ -1,23 +1,42 @@
-dir1 = "/usr/volume/WSSS/WSSS_PML/distances_0.txt"
-dir2= "/usr/volume/WSSS/WSSS_PML/distances_1.txt"
-dists = []
-with open(dir1, 'r') as f:
+'''
+    可视化损失曲线
+'''
+file_dir = "/usr/volume/WSSS/WSSS_PML/result/e3-patch_weight0.05-all-10patch_randomstart-fgmid_halfconfidback0.4-seed7/e3-patch_weight0.05-all-10patch_randomstart-fgmid_halfconfidback0.4-seed7.log"
+pic_title = ""
+loss_list = []
+with open(file_dir, 'r') as f:
     for line in f.readlines():
-        dists.append(float(line.strip('\n')))
-with open(dir2, 'r') as f:
-    for line in f.readlines():
-        dists.append(float(line.strip('\n')))
+        if len(line)>100 and len(line)<150:   # 1030  43 121√  30  21
+            loss_list.append(float(line[27:33]))
+            # loss_list.append(float(line[23:29]))
 from matplotlib import pyplot as plt
-d = 0.1
-num_bins = 10
-plt.figure(figsize=(20,8), dpi=80)
-plt.hist(dists, bins=10)
-xticks = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
-plt.xticks(xticks)
-plt.grid(alpha=0.4)
-plt.savefig("/usr/volume/WSSS/WSSS_PML/distances_hist.jpg")
-print(dists)
-a =1
+plt.figure(figsize=(20, 8), dpi=80)
+x = range(len(loss_list))
+plt.plot(x, loss_list)
+plt.title(pic_title)
+plt.savefig(f"/usr/volume/WSSS/WSSS_PML/loss-{pic_title}.jpg")
+a=1
+
+# dir1 = "/usr/volume/WSSS/WSSS_PML/distances_0.txt"
+# dir2= "/usr/volume/WSSS/WSSS_PML/distances_1.txt"
+# dists = []
+# with open(dir1, 'r') as f:
+#     for line in f.readlines():
+#         dists.append(float(line.strip('\n')))
+# with open(dir2, 'r') as f:
+#     for line in f.readlines():
+#         dists.append(float(line.strip('\n')))
+# from matplotlib import pyplot as plt
+# d = 0.1
+# num_bins = 10
+# plt.figure(figsize=(20,8), dpi=80)
+# plt.hist(dists, bins=10)
+# xticks = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
+# plt.xticks(xticks)
+# plt.grid(alpha=0.4)
+# plt.savefig("/usr/volume/WSSS/WSSS_PML/distances_hist.jpg")
+# print(dists)
+# a =1
 
 
 '''

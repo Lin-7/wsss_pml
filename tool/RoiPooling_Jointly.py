@@ -344,6 +344,7 @@ class RoiPoolingRandom(Module):
         :return:
         """
         pool = []
+        nfgpool=[]
         fg_score = []
         confidence_score = []
         pool_label_list = []
@@ -383,8 +384,9 @@ class RoiPoolingRandom(Module):
             # range_s, range_l = area_ratio, 1
 
             random_times = random_times_base
-            ppool=[]
-            fgpool=[]
+            pool_perproposal=[]
+            fgpool_perproposal=[]
+            nfgpool_perproposal=[]
             for _ in range(int(random_times)):
                 
                 # # 随机决定先确定哪一条边
@@ -421,7 +423,7 @@ class RoiPoolingRandom(Module):
                 map = feature_map
                 region = self.get_region(map, region_dim_i)
                 # 基于整个patch计算特征表示
-                ppool.append(self.pool_region_ori(region).squeeze().unsqueeze(0))    # [1,channel,1,1]
+                pool_perproposal.append(self.pool_region_ori(region).squeeze().unsqueeze(0))    # [1,channel,1,1]
 
                 # # 基于前景区域计算特征表示
                 # if target_percentage == 0:
@@ -429,6 +431,14 @@ class RoiPoolingRandom(Module):
                 # else:
                 #     masked_region = torch.tensor(region_mask[None, :, :]).cuda() * region
                 #     fgpool.append(masked_region.sum(axis=(1,2)) / np.sum(region_mask == 1)) 
+
+                # 计算背景区域的特征表示
+                if np.sum(region_mask==0) == 0:
+                    nfg_p = torch.zeros(region.size(0), dtype=region.dtype).cuda()
+                else:
+                    nfg_masked_region = torch.tensor((~region_mask.astype(bool)).astype(int)[None, :, :]).cuda() * region
+                    nfg_p = nfg_masked_region.sum(axis=(1,2)) / np.sum(region_mask == 0)
+                nfgpool_perproposal.append(nfg_p)
 
                 # 计算patch的置信度分数
                 c_score = []
@@ -446,7 +456,8 @@ class RoiPoolingRandom(Module):
             # 检查一下NMS后的patches的面积占比（会不会小面积的都被大面积的抑制掉了）--不会，反而小尺寸的多 eg: 0.5, 0.5, 0.4, 0.4, 0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.3
             # print(np.array(a_ratio)[bounding_box_index])
 
-            # # === 统计随机生成的10个patch的分布情况 =====
+            '''
+            # === 统计随机生成的10个patch的分布情况 =====
             # patches_start = np.array([[(temp[0]-xmin)/w,(temp[1]-ymin)/h] for temp in cur_pic_patches])
             # patches_center = np.mean(patches_start, axis=0)
             # # patches_center = np.tile(patches_center, (patches_start.shape[0], 1))
@@ -456,6 +467,7 @@ class RoiPoolingRandom(Module):
             # with open(f"/usr/volume/WSSS/WSSS_PML/distances_{device}.txt", "a") as f:
             #     f.write(f"{norm_mean_dist:.4f}\n") 
             # # === 统计随机生成的10个patch的分布情况 =====
+            ''' 
 
             # noNMS
             bounding_box_index = range(len(cur_pic_patches))
@@ -464,22 +476,22 @@ class RoiPoolingRandom(Module):
 
                 region_dim_i = cur_pic_patches[i]
 
-                pool.append(ppool[i])
+                pool.append(pool_perproposal[i])
                 # fg_pool.append(fgpool[i].unsqueeze(0))
+                nfgpool.append(nfgpool_perproposal[i].unsqueeze(0))
                 patch_locs.append(region_dim_i)
                 pool_label_list.append(region_label)
                 fg_score.append(cur_patches_fg_score[i])
                 confidence_score.append(cur_patches_confid_score[i])
 
-        # if not fg_pool:
-        #     return [],[],[],[],[],[]
         if not pool:
             return [],[],[],[],[],[]
 
         pool=torch.cat(pool,dim=0)
         # fg_pool=torch.cat(fg_pool,dim=0)
+        nfgpool=torch.cat(nfgpool,dim=0)
 
-        return pool, pool_label_list, [fg_score, confidence_score], patch_locs   # 检查patch locs的类型和格式--n*4的python数组
+        return pool, nfgpool, pool_label_list, [fg_score, confidence_score], patch_locs   # 检查patch locs的类型和格式--n*4的python数组
 
 class RoiPoolingContrastive(Module):
     def __init__(self, mode='tf', pool_size=(1, 1), args=""):

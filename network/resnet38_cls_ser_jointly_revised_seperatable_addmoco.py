@@ -19,6 +19,7 @@ from voc12.data import get_img_path
 from tool.imutils import reNormalize
 
 from scipy import stats
+import glo
 
 # from tool import pyutils
 # seed = pyutils.seed_everything()
@@ -306,11 +307,11 @@ class Net(network.resnet38d.Net):
 
         return selected_indexs
 
-
     # 基于得到的bounding box和label, 变成feature vector后计算metric learning loss
     # patch_nums=[1, 4, 9, 16, 25]
     def patch_based_metric_loss(self, img, x_patch, label, bboxes, bbxs_cls, bbxs_img, patch_nums=[4], 
-                    is_same_img=False, is_hard_negative=True, epoch_iter="null", img_names=[], args=""):
+                    is_same_img=False, is_hard_negative=True, epoch_iter="null", img_names=[], 
+                    args=""):
 
         N_f, _, patch_w, patch_h = x_patch.size()
         assert patch_w==patch_h, "特征图长宽不等，下面特征图坐标与原图坐标的对齐操作可能会出错"
@@ -327,7 +328,9 @@ class Net(network.resnet38d.Net):
         triplet_info = []
         patch_embs = []
         proposal_num = 0 
-        
+        F_queue, Fbg_queue, label_queue = glo.get_value("F_queue"), glo.get_value("Fbg_queue"), glo.get_value("label_queue")
+        F_queue = F_queue.cuda()
+
         for i in range(N_f):# for 每张图片
             # 确定boundingbox
             if is_same_img:
@@ -336,13 +339,10 @@ class Net(network.resnet38d.Net):
             else:
                 roi_index, label_list, norm_cam_bg = self.get_roi_index(cam_wo_dropout1[i].detach(), label[i], args.proposal_padding)   # 检查最大值是否与特征图长度一致--是的
                 # label_list中label范围1-20
-                # bbox_idxs = bbxs_img==i
-                # roi_index = bboxes[bbox_idxs]
-                # label_list = bbxs_cls[bbox_idxs]
 
             if len(label_list) > 0:   # 用cams激活区域的boundingbox去框在最后一组特征（256维）中的对应位置，然后切成patch_num份，每一份中每一维做一个全局平均池化
                 proposal_num += len(label_list)
-                roi_cls_pooled, roi_label_list, score_list, p_locs \
+                roi_cls_pooled, nfg_roi_cls_pooled, roi_label_list, score_list, p_locs \
                     = self.roi_pooling(feature_map=x_patch[i], roi_batch=roi_index, label_list=label_list, \
                         patch_nums=patch_nums, norm_cam_bg=norm_cam_bg, cls_label=label[i])  # predict roi_cls_label
 
@@ -357,7 +357,7 @@ class Net(network.resnet38d.Net):
                         raise ValueError(f"len(score_list) is {len(score_list)}, but it must be 1 or 2!")
                     roi_cls_feature_vector.append(roi_cls_pooled)
                     # fg_roi_cls_feature_vector.append(fg_roi_cls_pooled)
-                    # nfg_roi_cls_feature_vector.append(nfg_roi_cls_pooled)
+                    nfg_roi_cls_feature_vector.append(nfg_roi_cls_pooled)
                     roi_cls_label.extend(roi_label_list)
                     img_ids.extend([i]*len(roi_label_list))
                     patch_locs.extend(p_locs)
@@ -376,12 +376,17 @@ class Net(network.resnet38d.Net):
             patch_embs =  torch.zeros(256).unsqueeze(0).cuda()
             patch_labels = torch.tensor([-1]).cuda()
             patch_mask = torch.tensor([-1]).cuda()
+
+            patch_embs_select = torch.randn(1, 256).cuda()
+            nfg_patch_embs_select = torch.randn(1, 256)
+            patch_labels_select = torch.randn(1)
         else:
             patch_embs = torch.cat(roi_cls_feature_vector, 0)
             # fg_patch_embs = torch.cat(fg_roi_cls_feature_vector, 0)
-            # nfg_patch_embs = torch.cat(nfg_roi_cls_feature_vector, 0)
+            nfg_patch_embs = torch.cat(nfg_roi_cls_feature_vector, 0)
 
             # ============ 挑patches ========================
+
             if args.patch_select_close:
                 indexs = range(len(patch_labels))
             else:
@@ -408,6 +413,7 @@ class Net(network.resnet38d.Net):
                     #     # self.lookatsimilarity(patch_embs)
                     #     indexs = np.sort(sorted_idxes[:int(As)].copy())
                     indexs = np.sort(sorted_idxes[:int(As)].copy())
+
             # ============ 挑patches ========================
 
             # 选择所有的patches
@@ -418,8 +424,8 @@ class Net(network.resnet38d.Net):
 
             patch_embs_select = patch_embs[indexs]
             # fg_patch_embs_select = fg_patch_embs[indexs]
-            # nfg_patch_embs_select = nfg_patch_embs[indexs]
-            patch_labels_select = patch_labels[indexs]
+            nfg_patch_embs_select = nfg_patch_embs[indexs].detach().cpu()
+            patch_labels_select = patch_labels[indexs].cpu()
             img_ids_selected = img_ids[indexs]
 
             patch_embs = patch_embs.detach()
@@ -432,18 +438,26 @@ class Net(network.resnet38d.Net):
             # hard_pairs = miner(patch_embs, patch_labels)
             # self.loss_patch_cls = loss_func(patch_embs, patch_labels, hard_pairs)
 
-            # ======
-            # patch相似度
-            distance = self.euclidean_dist(patch_embs_select, patch_embs_select)
-            # # 目标前景相似度
-            # fg_distance = self.euclidean_dist(fg_patch_embs_select, fg_patch_embs_select)
-            # # 非目标前景区域的相似度
-            # nfg_distance = self.euclidean_dist(nfg_patch_embs_select, nfg_patch_embs_select)
+            use_queue = 0
+            if use_queue:
+                distance = self.euclidean_dist(patch_embs_select, F_queue)
+                bg_distance = self.euclidean_dist(nfg_patch_embs_select, Fbg_queue)
 
-            # For each anchor, find the hardest positive and negative
-            mask = patch_labels_select.expand(n, n).eq(patch_labels_select.expand(n, n).t())
-            img_mask = img_ids_selected.expand(n, n).eq(img_ids_selected.expand(n, n).t())
+                mask = patch_labels_select.unsqueeze(1).expand(n, int(args.queuesize)).eq(label_queue.expand(int(args.queuesize), n).t())
+            else:
+                # patch相似度
+                distance = self.euclidean_dist(patch_embs_select, patch_embs_select)
+                # # 目标前景相似度
+                # fg_distance = self.euclidean_dist(fg_patch_embs_select, fg_patch_embs_select)
+                # # 非目标前景区域的相似度
+                # nfg_distance = self.euclidean_dist(nfg_patch_embs_select, nfg_patch_embs_select)
 
+                # For each anchor, find the hardest positive and negative
+                mask = patch_labels_select.expand(n, n).eq(patch_labels_select.expand(n, n).t())
+                img_mask = img_ids_selected.expand(n, n).eq(img_ids_selected.expand(n, n).t())
+
+            assert not (use_queue and is_same_img), "both use_queue and is_same_img are true!"  # for simplicity
+                
         dist_ap, dist_an = [], []
 
         pass_neg = 0
@@ -459,6 +473,8 @@ class Net(network.resnet38d.Net):
                 neg_mask=~mask[i]
                 neg_idx=torch.tensor(range(len(neg_mask)))[neg_mask==1]
             an_i = distance[i][neg_mask]
+            if args.bghard:
+                an_i_bg = bg_distance[i][neg_mask]
             # an_i = fg_distance[i][neg_idx]
             if an_i.size(0) == 0:
                 pass_neg += 1
@@ -471,13 +487,19 @@ class Net(network.resnet38d.Net):
                 pos_mask=mask[i]
                 pos_idx=torch.tensor(range(len(pos_mask)))[pos_mask==1]
             ap_i = distance[i][pos_mask]
+            if args.bghard:
+                ap_i_bg = bg_distance[i][pos_mask]
             if ap_i.size(0) == 0:
                 pass_pos += 1
                 continue
 
             if is_hard_negative:
-                dist_ap.append(ap_i.max().unsqueeze(0))
-                dist_an.append(an_i.min().unsqueeze(0))
+                if args.bghard:
+                    dist_ap.append(ap_i[torch.argmax(ap_i_bg)].unsqueeze(0))
+                    dist_an.append(an_i[torch.argmin(an_i_bg)].unsqueeze(0))
+                else:
+                    dist_ap.append(ap_i.max().unsqueeze(0))
+                    dist_an.append(an_i.min().unsqueeze(0))
                 p_idx = ap_i.argmax()
                 n_idx = an_i.argmin()
             else:
@@ -489,10 +511,10 @@ class Net(network.resnet38d.Net):
                 dist_ap.append(distance[i][pos_mask][p_idx].unsqueeze(0))
                 dist_an.append(an_i[n_idx].unsqueeze(0))    # 如果一个batch里面没有不同类别的图片会报错
             
-            # 记录的是三元组中anchor positive negative各自对应的在当前batch的所有patch下的下标
-            triplet_info.append((indexs[i], indexs[pos_idx[p_idx]], indexs[neg_idx[n_idx]]))
+            # # 记录的是三元组中anchor positive negative各自对应的在当前batch的所有patch下的下标
+            # triplet_info.append((indexs[i], indexs[pos_idx[p_idx]], indexs[neg_idx[n_idx]]))
 
-        
+        '''
         # === 记录用于构造triplet的patches总数以及没有负正对的patches总数 =====
         device = torch.cuda.current_device()
         with open(f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_{device}.txt", "a") as f:
@@ -504,6 +526,7 @@ class Net(network.resnet38d.Net):
         with open(f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_{device}.txt", "a") as f:
             f.write(f"{pass_pos}\n") 
         # === 记录用于构造triplet的patches总数以及没有负正对的patches总数 =====
+        '''
 
         '''
         # TODO: 还没完成的一些选triplet的尝试
@@ -579,9 +602,9 @@ class Net(network.resnet38d.Net):
         # triplet loss
         if len(dist_ap)>0:
             # 可视化当前batch的patches
-            if epoch_iter!="null":
-                self.visualize_batch_patches(img.detach().cpu(), img_names, patch_locs, img_ids.cpu(), \
-                    patch_labels.cpu(), patch_mask.cpu(), scores, triplet_info, args, epoch_iter)   # 把cuda上的东西都放到cpu上，在计算图中的都detach下来
+            # if epoch_iter!="null":
+            #     self.visualize_batch_patches(img.detach().cpu(), img_names, patch_locs, img_ids.cpu(), \
+            #         patch_labels.cpu(), patch_mask.cpu(), scores, triplet_info, args, epoch_iter)   # 把cuda上的东西都放到cpu上，在计算图中的都detach下来
 
             dist_ap = torch.cat(dist_ap, 0)
             dist_an = torch.cat(dist_an, 0)
@@ -593,9 +616,9 @@ class Net(network.resnet38d.Net):
             else:
                 loss_patch_cls = self.ranking_loss(dist_an, dist_ap, y) / y.shape[0]
 
-            return loss_patch_cls, patch_embs, patch_labels, patch_mask
+            return loss_patch_cls, patch_embs, patch_labels, patch_mask, [patch_embs_select, nfg_patch_embs_select.cuda(), patch_labels_select.cuda()]
         else:
-            return torch.tensor(0.0).cuda(), patch_embs, patch_labels, patch_mask
+            return torch.tensor(0.0).cuda(), patch_embs, patch_labels, patch_mask, [patch_embs_select, nfg_patch_embs_select.cuda(), patch_labels_select.cuda()]
 
     def forward(self, x, bounding_box=None, label=None, img_names=[], param=None, is_patch_metric=True, \
                     patch_nums=[4],is_sse=False,featuremap=False, patches=False, epoch_iter="null", args=""):
@@ -656,8 +679,7 @@ class Net(network.resnet38d.Net):
                             bboxes.append(bbox[key][j])
                             bbxs_cls.append(key)
                             bbxs_img.append(i-device*N)
-
-                patch_metric_loss, patch_embs, patch_labels, patch_mask\
+                patch_metric_loss, patch_embs, patch_labels, patch_mask, queues_info\
                     =self.patch_based_metric_loss(img, x_patch, label, np.array(bboxes), np.array(bbxs_cls), \
                             np.array(bbxs_img), is_same_img=False, is_hard_negative=True, epoch_iter=epoch_iter, \
                             img_names=img_names, args=args)
@@ -669,7 +691,7 @@ class Net(network.resnet38d.Net):
                 # patch_metric_loss= patch_metric_loss_same_img
                 # patch_metric_loss= patch_metric_loss_same_img
 
-                return [loss_cls, patch_metric_loss, patch_embs, patch_labels, patch_mask]
+                return [loss_cls, patch_metric_loss, patch_embs, patch_labels, patch_mask, queues_info]
 
         else:
             result = cam

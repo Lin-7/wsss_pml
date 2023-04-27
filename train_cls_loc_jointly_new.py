@@ -31,7 +31,7 @@ from PIL import Image
 from evaluation import eval
 import voc12.data
 from tool import pyutils, imutils, torchutils, visualization
-
+import glo
 
 # seed = pyutils.seed_everything()
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
@@ -60,10 +60,10 @@ if __name__ == '__main__':
     # 机器和环境的不同，会差一两个点
     parser.add_argument("--batch_size", default=10, type=int)   # 10/12   一个gpu：8×6√  两个gpu：10
     parser.add_argument("--max_epoches", default=3, type=int)   # 根据机器去修改
-    parser.add_argument("--network", default="network.resnet38_cls_ser_jointly_revised_seperatable", type=str)
+    parser.add_argument("--network", default="network.resnet38_cls_ser_jointly_revised_seperatable_addmoco", type=str)
     parser.add_argument("--lr", default=0.01, type=float)
     parser.add_argument("--num_workers", default=8, type=int)
-    parser.add_argument("--num_workers_infer", default=10, type=int)   # torch.utils.data.dataloader提示建议创建12个workers
+    parser.add_argument("--num_workers_infer", default=12, type=int)   # torch.utils.data.dataloader提示建议创建12个workers
     parser.add_argument("--wt_dec", default=5e-4, type=float)
 
     # 权重
@@ -86,17 +86,19 @@ if __name__ == '__main__':
     # patch相关的参数
     parser.add_argument("--patch_gen", default="randompatch", type=str)   # 4patch randompatch contrastivepatch
     parser.add_argument("--ccrop_alpha", default=0.7, type=float)
-    parser.add_argument("--patch_select_close", default=True, type=bool)   # 不选择patches
-    parser.add_argument("--patch_select_cri", default="random", type=str)   # fgratio confid fgAndconfid random
+    parser.add_argument("--patch_select_close", default=False, type=bool)   # 不选择patches
+    parser.add_argument("--patch_select_cri", default="fgratio", type=str)   # fgratio confid fgAndconfid random
     parser.add_argument("--patch_select_ratio", default=0.4, type=float)   # 0.3 0.4 0.5
     parser.add_argument("--patch_select_part_fg", default="mid", type=str)   # front mid back
     parser.add_argument("--patch_select_part_confid", default="front", type=str)   # front mid back
     # parser.add_argument("--patch_select_checksimi", default=True, type=bool)   # 选择patches的时候考虑内容相似性
     # parser.add_argument("--patch_select_checksimi_thres", default=0.9, type=float)
     parser.add_argument("--proposal_padding", default=0, type=float)
+    parser.add_argument("--queuesize", default=1000, type=int)
+    parser.add_argument("--bghard", default=False, type=bool)
     parser.add_argument("--patch_loss_weight", default=0.05, type=float)
 
-    parser.add_argument("--session_name", default="test", type=str)         # train val test
+    parser.add_argument("--session_name", default="test0309-randomGen-noSelect-noQueue_hardTriplet", type=str)         # train val test
     # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-randompatch-fgmid0.5-Sp0.3-noNp10-noNMS-11", type=str)         # train val test
     # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-padding0.25-10patch_randomstart-fgmid0.4-seed7", type=str)         # train val test
     # patch_loss_weight = 0.05
@@ -115,7 +117,7 @@ if __name__ == '__main__':
     # parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/WSSS_PML/log_CAM_{phase}.txt", type=str)
 
     args = parser.parse_args()
-    args.interpolate_mode = 'bilinear'  # nearest
+    args.interpolate_mode = 'bilinear'  # bicubic, nearest
 
     # 存放结果的根目录
     out_root = f"/usr/volume/WSSS/WSSS_PML/result/{args.session_name}/"
@@ -270,6 +272,10 @@ if __name__ == '__main__':
     
     # training
     patchnums, npatchnums, ppatchnums = [], [], []
+    glo._init()
+    glo.set_value('label_queue', torch.randn(args.queuesize, 1))
+    glo.set_value('Fbg_queue', torch.randn(args.queuesize, 256))
+    glo.set_value('F_queue', torch.randn(args.queuesize, 256))
     for ep in range(args.max_epoches):
         itr = ep + 1
         # log the images at the beginning of each epoch
@@ -316,9 +322,6 @@ if __name__ == '__main__':
             tblogger.add_images('CAM_' + str(iter), CAM, itr)
         '''
 
-        #     # print("Epoch %s: " % str(ep), "%.2fs" % (timer.get_stage_elapsed()))
-        #     timer.reset_stage()
- 
         patches = []
         p_labels = []
         p_masks = []
@@ -342,18 +345,17 @@ if __name__ == '__main__':
 
             optimizer.zero_grad()
 
-            
             if iter in visualize_iter_idxs:
                 # visualize patches
-                loss_cls, loss_patch, patch_embs, patch_labels, patch_mask \
-                 = model(x=img, label=label, bounding_box=bounding_box, param=param, is_patch_metric=True, is_sse=False, epoch_iter=f"{ep}_{iter}", img_names=name, args=args)
+                loss_cls, loss_patch, patch_embs, patch_labels, patch_mask, queues_info \
+                 = model(x=img, label=label, bounding_box=bounding_box, param=param, \
+                    is_patch_metric=True, is_sse=False, epoch_iter=f"{ep}_{iter}", \
+                        img_names=name, args=args)
             else:
-                loss_cls, loss_patch, patch_embs, patch_labels, patch_mask \
-                 = model(x=img, label=label, bounding_box=bounding_box, param=param, is_patch_metric=True, is_sse=False, img_names=name, args=args)
-            
-            patches.extend(patch_embs.detach().cpu())
-            p_labels.extend(patch_labels.cpu())
-            p_masks.extend(patch_mask.cpu())
+                loss_cls, loss_patch, patch_embs, patch_labels, patch_mask, queues_info \
+                 = model(x=img, label=label, bounding_box=bounding_box, param=param, \
+                    is_patch_metric=True, is_sse=False, img_names=name, \
+                        args=args)
 
             loss_cls=loss_cls.mean()
 
@@ -376,10 +378,33 @@ if __name__ == '__main__':
             avg_meter.add({'loss': loss.item()})
             avg_meter1.add({'loss_cls': loss_cls.item()})
 
+            # loss.requires_grad_(True)
+            # loss.backward(retain_graph=True)
             loss.backward()
+
             optimizer.step()
 
             global_step+=1
+
+            q_features, q_nfg_features, q_labels = queues_info
+            q_features = q_features.detach().cpu()
+            q_nfg_features = q_nfg_features.cpu()
+            q_labels = q_labels.cpu().unsqueeze(1)
+
+            label_queue = glo.get_value('label_queue')
+            Fbg_queue = glo.get_value('Fbg_queue')
+            F_queue = glo.get_value('F_queue')
+            cur_patches_size = q_features.size(0)
+            F_queue = torch.cat((F_queue, q_features), dim=0)[cur_patches_size:,:]
+            Fbg_queue = torch.cat((Fbg_queue, q_nfg_features), dim=0)[cur_patches_size:,:]
+            label_queue = torch.cat((label_queue, q_labels), dim=0)[cur_patches_size:,:]
+            glo.set_value('label_queue', label_queue)
+            glo.set_value('Fbg_queue', Fbg_queue)
+            glo.set_value('F_queue', F_queue)
+
+            patches.extend(patch_embs.detach().cpu())
+            p_labels.extend(patch_labels.cpu())
+            p_masks.extend(patch_mask.cpu())
 
             # print
             if (global_step-1)%10 == 0:
@@ -399,6 +424,7 @@ if __name__ == '__main__':
             
         print(f"epoch{ep} end!!!!!!!!!!!!!!!!!!!")
 
+        '''
         # ==== 附加内容:统计用于构造triplet的patches总数以及没有负正对的patches总数 ======
         dir1 = "/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_0.txt"
         dir2= "/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_1.txt"
@@ -423,7 +449,7 @@ if __name__ == '__main__':
         npatchnums.append(num1)
         ppatchnums.append(num2)
         # ==== 附加内容:统计用于构造triplet的patches总数以及没有负正对的patches总数 ======
-
+        '''
         ''' 
         # ==== 附加内容:统计随机生成的10个patch的分布情况 ======
         # dir1 = "/usr/volume/WSSS/WSSS_PML/distances_0.txt"
@@ -468,7 +494,6 @@ if __name__ == '__main__':
         avg_meter.pop()
 
         # evaluation
-
         loss_dict = {'loss': loss_list[-1]}
         tblogger.add_scalars('cls_loss', loss_dict, itr)
         tblogger.add_scalar('cls_lr', optimizer.param_groups[0]['lr'], itr)
@@ -599,7 +624,7 @@ if __name__ == '__main__':
                 #     detail_txt=args.log_infer_cls_detail, visualize_dir=visualize_dir, cams_dir=args.out_cam, \
                 #         model_name=args.weights, bg_threshold=background_threshold)
 
-    
+    '''
     from matplotlib import pyplot as plt
     width=0.3
     x = np.arange(3)
@@ -620,3 +645,4 @@ if __name__ == '__main__':
     plt.savefig(f"/usr/volume/WSSS/WSSS_PML/patches-condition.jpg")
 
     print("Session finished:{}".format(time.ctime(time.time())))
+    '''

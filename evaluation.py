@@ -279,20 +279,20 @@ if __name__ == '__main__':
     df = pd.read_csv(args.list, names=['filename'])
     name_list = df['filename'].values
     # name_list = name_list[np.random.choice(range(len(name_list)), 100)]  # 只取一部分，加快速度
-    # bg_thres = 0.15
+    bg_thres = 0.15
     bg_thresh=[0.15,0.16,0.17,0.18,0.19,0.20,0.21,0.22,0.23,0.24,0.25,0.26,0.27,0.28,0.29,0.30]
     visualize_dir = "/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05-all-patchscale4-confidback0.5-nohards1/visualization/epoch0"
     cams_dir="/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05-all-patchscale4-confidback0.5-nohards1/out_cams"
     pre_dir_root = "/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05-all-patchscale4-confidback0.5-nohards1/out_cam_pre/epoch0"
-    # loglist, detaillist = do_python_eval(args.predict_dir, args.gt_dir, name_list, 21, bg_thres)
+    loglist, detaillist = do_python_eval(args.predict_dir, args.gt_dir, name_list, 21, bg_thres)
     # writelog(args.logfile, loglist, args.comment, bg_thres)
     # writedictJson(args.logfile_detail, detaillist)
 
-    for bgt in bg_thresh:
+    # for bgt in bg_thresh:
 
-        cur_pre_dir = pre_dir_root + f"/{bgt}"
-        cur_vis_dir = visualize_dir + f"/{bgt}"
-        if not os.path.exists(cur_vis_dir):
-            os.mkdir(cur_vis_dir)
+    #     cur_pre_dir = pre_dir_root + f"/{bgt}"
+    #     cur_vis_dir = visualize_dir + f"/{bgt}"
+    #     if not os.path.exists(cur_vis_dir):
+    #         os.mkdir(cur_vis_dir)
         
-        do_visualization(cur_pre_dir, args.gt_dir, name_list, 20, cur_vis_dir, cams_dir)
+    #     do_visualization(cur_pre_dir, args.gt_dir, name_list, 20, cur_vis_dir, cams_dir)
