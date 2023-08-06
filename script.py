@@ -1,14 +1,16 @@
 '''
     可视化损失曲线
 '''
-file_dir = "/usr/volume/WSSS/WSSS_PML/result/e3-patch_weight0.05-all-10patch_randomstart-fgmid_halfconfidback0.4-seed7/e3-patch_weight0.05-all-10patch_randomstart-fgmid_halfconfidback0.4-seed7.log"
-pic_title = ""
+file_dir = "/usr/volume/WSSS/WSSS_PML/result/0510-4patch-noselect-noQ-noM-hard/0510-4patch-noselect-noQ-noM-hard.log"
+pic_title = "0512-ploss"
 loss_list = []
 with open(file_dir, 'r') as f:
     for line in f.readlines():
         if len(line)>100 and len(line)<150:   # 1030  43 121√  30  21
-            loss_list.append(float(line[27:33]))
+            # loss_list.append(float(line[27:33]))
             # loss_list.append(float(line[23:29]))
+            # loss_list.append(float(line[40:46]))
+            loss_list.append(float(line[60:66]))
 from matplotlib import pyplot as plt
 plt.figure(figsize=(20, 8), dpi=80)
 x = range(len(loss_list))
