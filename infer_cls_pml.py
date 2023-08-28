@@ -35,14 +35,14 @@ if __name__ == '__main__':
     # parser.add_argument("--weights", default="/home/chenkeke/project/WSSS/weights_released/res38_cls.pth", type=str)
     # parser.add_argument("--network", default="network.resnet38_cls", type=str)
     # 模型和参数
-    parser.add_argument("--weights", default="/usr/volume/WSSS/WSSS_PML/saved_checkpoints/test/2ep.pth", type=str)
+    parser.add_argument("--weights", default="/usr/volume/WSSS/wsss_pml/saved_checkpoints/test/2ep.pth", type=str)
     parser.add_argument("--network", default="network.resnet38_cls_ser_jointly_revised_seperatable", type=str)
 
     # 数据
-    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt", type=str)
-    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/{phase}_voc12.txt", type=str)
-    parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/val_voc12.txt", type=str)  # 跟phase指定的值要一致
-    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/testimg.txt", type=str)
+    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/wsss_pml/voc12/train_aug.txt", type=str)
+    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/wsss_pml/voc12/{phase}_voc12.txt", type=str)
+    parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/wsss_pml/voc12/val_voc12.txt", type=str)  # 跟phase指定的值要一致
+    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/wsss_pml/voc12/testimg.txt", type=str)
     parser.add_argument("--voc12_root", default='/usr/volume/WSSS/VOCdevkit/VOC2012', type=str)
 
     # 其他参数
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     # parser.add_argument("--out_cam", default=None, type=str)
     parser.add_argument("--out_crf", default=None, type=str)
     parser.add_argument("--out_cam_pred", default="./out_cam_pred_val", type=str)
-    parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/WSSS_PML/log_CAM_{phase}.txt", type=str)
+    parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/wsss_pml/log_CAM_{phase}.txt", type=str)
 
     # 背景阈值的设置
     # 原本是0.2  后来我们的方法在24G显存上跑的是0.245最好, 后面也要调这个
@@ -184,8 +184,8 @@ if __name__ == '__main__':
     for background_threshold in bg_thresh:
         if args.out_cam_pred is not None:
             print(f"background threshold is {background_threshold}")
-            eval(f"/usr/volume/WSSS/WSSS_PML/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, model_name=args.weights)
-            # eval("/usr/volume/WSSS/WSSS_PML/voc12/testimglabel.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, model_name=args.weights)
+            eval(f"/usr/volume/WSSS/wsss_pml/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, model_name=args.weights)
+            # eval("/usr/volume/WSSS/wsss_pml/voc12/testimglabel.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, model_name=args.weights)
 
 
 

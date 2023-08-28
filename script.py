@@ -1,5 +1,5 @@
-dir1 = "/usr/volume/WSSS/WSSS_PML/distances_0.txt"
-dir2= "/usr/volume/WSSS/WSSS_PML/distances_1.txt"
+dir1 = "/usr/volume/WSSS/wsss_pml/distances_0.txt"
+dir2= "/usr/volume/WSSS/wsss_pml/distances_1.txt"
 dists = []
 with open(dir1, 'r') as f:
     for line in f.readlines():
@@ -15,7 +15,7 @@ plt.hist(dists, bins=10)
 xticks = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
 plt.xticks(xticks)
 plt.grid(alpha=0.4)
-plt.savefig("/usr/volume/WSSS/WSSS_PML/distances_hist.jpg")
+plt.savefig("/usr/volume/WSSS/wsss_pml/distances_hist.jpg")
 print(dists)
 a =1
 
@@ -30,7 +30,7 @@ a =1
 # from torch.utils.data import DataLoader
 # from voc12.datacopy import VOC12ClsDataset
 # from tool import imutilscopy as imutils
-# train_list = "/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt"
+# train_list = "/usr/volume/WSSS/wsss_pml/voc12/train_aug.txt"
 # voc12_root = "/usr/volume/WSSS/VOCdevkit/VOC2012"
 # network = "network.resnet38_cls_ser_jointly_revised_seperatable"
 # gt_dir = "/usr/volume/WSSS/VOCdevkit/VOC2012/SegmentationClass"
@@ -66,7 +66,7 @@ a =1
 # #     # pack 再包含分割gt
 # #     # 取出之后看大小是否匹配
 # import os
-# dataset_path = "/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt"
+# dataset_path = "/usr/volume/WSSS/wsss_pml/voc12/train_aug.txt"
 # list = os.listdir("/usr/volume/WSSS/VOCdevkit/VOC2012/Annotations")
 # print(len(list))
 # img_gt_name_list = open(dataset_path).read().splitlines()
@@ -103,7 +103,7 @@ a =1
 # from PIL import Image
 # gt_dir = "/usr/volume/WSSS/VOCdevkit/VOC2012/SegmentationClass"
 # label_dir = "voc12/cls_labels.npy"
-# img_list = "/usr/volume/WSSS/WSSS_PML/voc12/val.txt"
+# img_list = "/usr/volume/WSSS/wsss_pml/voc12/val.txt"
 # cls_labels_dict = np.load('voc12/cls_labels.npy',allow_pickle=True).item()
 
 # df = pd.read_csv(img_list, names=['filename'])
@@ -147,7 +147,7 @@ a =1
 #             'chair', 'cow', 'dining table', 'dog', 'horse', 'motorbike', 'person', 
 #             'potted plant', 'sheep', 'sofa', 'train', 'tv_monitor' ]
 
-# label_file = '/usr/volume/WSSS/WSSS_PML/voc12/cls_labels.npy'
+# label_file = '/usr/volume/WSSS/wsss_pml/voc12/cls_labels.npy'
 # labels = np.load(label_file, allow_pickle=True)
 # labels_dict = labels.item()
 # imgs_dict = dict()
@@ -161,7 +161,7 @@ a =1
 # for i in range(19,20):
 #     tlen = len(imgs_dict[i])
 #     idxs = random.sample(range(tlen), selected_nums)
-#     save_file = '/usr/volume/WSSS/WSSS_PML/voc12/visualization/tensorboard_visualize_featuremap_img_{}.txt'.format(classes[i])
+#     save_file = '/usr/volume/WSSS/wsss_pml/voc12/visualization/tensorboard_visualize_featuremap_img_{}.txt'.format(classes[i])
 #     with open(save_file, mode='w') as f:
 #         for idx in idxs:
 #             f.write('/JPEGImages/{}.jpg /SegmentationClassAug/{}.png\n'.format(imgs_dict[i][idx], imgs_dict[i][idx]))

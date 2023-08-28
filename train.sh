@@ -1,6 +1,12 @@
 #!/bin/sh
+# 0828
+# nohup python train_cls_loc_jointly_new.py --session_name=base-patchweight0.01 --patch_loss_weight=0.01 2>base-pw0.01 &
 
+# nohup python train_cls_loc_jointly_new.py --session_name=base-patchweight0.1 --patch_loss_weight=0.1 2>base-pw0.1 &
 
+nohup python train_cls_loc_jointly_new.py --session_name=base-patchweight0.2 --patch_loss_weight=0.2 \
+    --max_epoches=3 \
+     1>base-pw0.2.log 2>base-pw0.2.err &
 
 # # 2.4
 # python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-diversity_thres0.9-0.4-seed7-2.10 \

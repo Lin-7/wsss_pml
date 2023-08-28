@@ -195,7 +195,7 @@ class RoiPooling(Module):
                     for l in label:
                         target_cam_region = self.get_mask_region(norm_cam_bg[l], region_dim_i)
                         c_score.append(target_cam_region[region_cam_predict == l].mean())
-                    confidence_score.append(c_score.mean())
+                    confidence_score.append(np.array(c_score).mean())
 
                     # 基于整个patch计算特征表示
                     region = self.get_region(map, region_dim_i)
@@ -453,7 +453,7 @@ class RoiPoolingRandom(Module):
             # distances = np.sqrt(np.sum((patches_start-patches_center)**2, axis=1))
             # norm_mean_dist = np.mean(distances)
             # device = torch.cuda.current_device()
-            # with open(f"/usr/volume/WSSS/WSSS_PML/distances_{device}.txt", "a") as f:
+            # with open(f"/usr/volume/WSSS/wsss_pml/distances_{device}.txt", "a") as f:
             #     f.write(f"{norm_mean_dist:.4f}\n") 
             # # === 统计随机生成的10个patch的分布情况 =====
 

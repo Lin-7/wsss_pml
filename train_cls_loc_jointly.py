@@ -55,11 +55,11 @@ if __name__ == '__main__':
 
     parser.add_argument("--voc12_root", default="/usr/volume/WSSS/VOCdevkit/VOC2012", type=str)
 
-    parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini.txt", type=str)
-    # parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt", type=str)
-    parser.add_argument("--train_voc_list", "-trvoc", default="/usr/volume/WSSS/WSSS_PML/voc12/train_voc12.txt", type=str)  # 没用到
-    parser.add_argument("--val_list", default="/usr/volume/WSSS/WSSS_PML/voc12/val.txt", type=str)   # 没用到
-    parser.add_argument("--tensorboard_img", default="/usr/volume/WSSS/WSSS_PML/voc12/tensorborad_img.txt", type=str)
+    parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/wsss_pml/voc12/train_voc12_mini.txt", type=str)
+    # parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/wsss_pml/voc12/train_aug.txt", type=str)
+    parser.add_argument("--train_voc_list", "-trvoc", default="/usr/volume/WSSS/wsss_pml/voc12/train_voc12.txt", type=str)  # 没用到
+    parser.add_argument("--val_list", default="/usr/volume/WSSS/wsss_pml/voc12/val.txt", type=str)   # 没用到
+    parser.add_argument("--tensorboard_img", default="/usr/volume/WSSS/wsss_pml/voc12/tensorborad_img.txt", type=str)
 
     parser.add_argument("--crop_size", default=448, type=int)
     parser.add_argument("--optimizer", default='poly', type=str)
@@ -72,14 +72,14 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    log_root = f"/usr/volume/WSSS/WSSS_PML/{args.tblog_dir}/{args.session_name}/"
+    log_root = f"/usr/volume/WSSS/wsss_pml/{args.tblog_dir}/{args.session_name}/"
     os.makedirs(log_root, exist_ok=True)
     if os.path.exists(log_root):
         shutil.rmtree(log_root)
 
     #### train from imagenet params
     # args.session_name="from_imageNet"
-    # args.weights="/usr/volume/WSSS/WSSS_PML/weights/ilsvrc-cls_rna-a1_cls1000_ep-0001.params"
+    # args.weights="/usr/volume/WSSS/wsss_pml/weights/ilsvrc-cls_rna-a1_cls1000_ep-0001.params"
     # args.lr=0.1
     #
     # args.optimizer="poly"
@@ -290,7 +290,7 @@ if __name__ == '__main__':
             optimizer.adam_turn_step()
 
         # 每个epoch保存模型
-        model_saved_root=f"/usr/volume/WSSS/WSSS_PML/{args.tblog_dir}/{args.session_name}/"
+        model_saved_root=f"/usr/volume/WSSS/wsss_pml/{args.tblog_dir}/{args.session_name}/"
         os.makedirs(model_saved_root, exist_ok=True)
         model_saved_dir = os.path.join(model_saved_root, f"{ep}ep.pth")
         torch.save(model.module.state_dict(),model_saved_dir)

@@ -19,7 +19,7 @@ writer = SummaryWriter(log_dir='./visualize_featuremap', comment='this is a comm
 
 # 加载模型并载入参数
 network = "network.resnet38_cls_ser_jointly_revised_seperatable"
-weights = "/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05/saved_checkpoints/patch_weight-0.05/4ep.pth"
+weights = "/usr/volume/WSSS/wsss_pml/result/e5-patch_weight0.05/saved_checkpoints/patch_weight-0.05/4ep.pth"
 model = getattr(importlib.import_module(network), 'Net')()
 model.load_state_dict(torch.load(weights))
 
@@ -30,7 +30,7 @@ model.load_state_dict(torch.load(weights))
 # np.savetxt('weights-patch_weight-0.05-4ep.txt', fc8_weights)
 
 # 加载数据
-imgs_list_path = "/usr/volume/WSSS/WSSS_PML/voc12/tensorboard_visualize_featuremap_img.txt"
+imgs_list_path = "/usr/volume/WSSS/wsss_pml/voc12/tensorboard_visualize_featuremap_img.txt"
 voc12_root="/usr/volume/WSSS/VOCdevkit/VOC2012"
 num_workers = 12
 tensorboard_dataset = voc12.data.VOC12ClsDataset(imgs_list_path, voc12_root=voc12_root,

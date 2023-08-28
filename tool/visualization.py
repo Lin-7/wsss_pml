@@ -179,11 +179,11 @@ def dense_crf(probs, img=None, n_classes=21, n_iters=1, scale_factor=1):
 	return preds
 
 def gen_cam_vis():
-	cam_root = "/usr/volume/WSSS/WSSS_PML/out_cam_train"
-	cam_saved_root = "/usr/volume/WSSS/WSSS_PML/visualization_results_w6/cam_pml/"
+	cam_root = "/usr/volume/WSSS/wsss_pml/out_cam_train"
+	cam_saved_root = "/usr/volume/WSSS/wsss_pml/visualization_results_w6/cam_pml/"
 	os.makedirs(cam_saved_root, exist_ok=True)
 	voc_root = "/usr/volume/WSSS/VOCdevkit/VOC2012"
-	with open("/usr/volume/WSSS/WSSS_PML/voc12/train_voc12.txt") as fp:
+	with open("/usr/volume/WSSS/wsss_pml/voc12/train_voc12.txt") as fp:
 		lines = fp.readlines()
 	for idx, line in enumerate(lines):
 		# line="/JPEGImages/2007_000392.jpg /SegmentationClass/2007_000392.png"
@@ -209,7 +209,7 @@ def gen_pseudo_mask_vis():
 	os.makedirs(pseudo_mask_saved_root, exist_ok=True)
 	pseudo_mask_root = "/home/chenkeke/project/WSSS/psa/out_cam_pred/"
 
-	with open("/usr/volume/WSSS/WSSS_PML/voc12/train_voc12.txt") as fp:
+	with open("/usr/volume/WSSS/wsss_pml/voc12/train_voc12.txt") as fp:
 		lines = fp.readlines()
 	for idx, line in enumerate(lines):
 
@@ -319,13 +319,13 @@ def visualize_batch_patches(imgs, img_names, patch_locs, patch_img_labels, patch
 '''	
 
 if __name__ == "__main__":
-	# cam_root="/usr/volume/WSSS/WSSS_PML/out_cam_train"
+	# cam_root="/usr/volume/WSSS/wsss_pml/out_cam_train"
 	pseudo_mask_saved_root="/home/chenkeke/project/WSSS/psa/visualization_proposals/"
 	os.makedirs(pseudo_mask_saved_root, exist_ok=True)
 	pseudo_mask_root="/home/chenkeke/project/WSSS/psa/out_cam_pred/"
 	voc_root = "/usr/volume/WSSS/VOCdevkit/VOC2012"
 
-	with open("/usr/volume/WSSS/WSSS_PML/voc12/train_voc12.txt") as fp:
+	with open("/usr/volume/WSSS/wsss_pml/voc12/train_voc12.txt") as fp:
 		lines=fp.readlines()
 	for idx, line in enumerate(lines):
 		# line="/JPEGImages/2007_000392.jpg /SegmentationClass/2007_000392.png"

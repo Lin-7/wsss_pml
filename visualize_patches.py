@@ -16,13 +16,13 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 # 加载模型并载入参数
 network = "network.resnet38_cls_ser_jointly_revised_seperatable"
 filename = "e5-patch_weight0.05-fg-patchscale4-ming>0"
-model_root = f"/usr/volume/WSSS/WSSS_PML/result/{filename}/"
+model_root = f"/usr/volume/WSSS/wsss_pml/result/{filename}/"
 weights = model_root + f"saved_checkpoints/4ep.pth"
 model = getattr(importlib.import_module(network), 'Net')()
 model.load_state_dict(torch.load(weights))
 
 # 加载数据
-imgs_list_path = "/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt"
+imgs_list_path = "/usr/volume/WSSS/wsss_pml/voc12/train_aug.txt"
 voc12_root="/usr/volume/WSSS/VOCdevkit/VOC2012"
 num_workers = 12
 batch_size = 4

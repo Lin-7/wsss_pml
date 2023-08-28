@@ -58,12 +58,12 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     # 机器和环境的不同，会差一两个点
-    parser.add_argument("--batch_size", default=10, type=int)   # 10/12   一个gpu：8×6√  两个gpu：10
+    parser.add_argument("--batch_size", default=32, type=int)   # 10/12   一个gpu：8×6√  两个gpu：10
     parser.add_argument("--max_epoches", default=3, type=int)   # 根据机器去修改
     parser.add_argument("--network", default="network.resnet38_cls_ser_jointly_revised_seperatable", type=str)
     parser.add_argument("--lr", default=0.01, type=float)
     parser.add_argument("--num_workers", default=8, type=int)
-    parser.add_argument("--num_workers_infer", default=10, type=int)   # torch.utils.data.dataloader提示建议创建12个workers
+    parser.add_argument("--num_workers_infer", default=12, type=int)   # torch.utils.data.dataloader提示建议创建12个workers
     parser.add_argument("--wt_dec", default=5e-4, type=float)
 
     # 权重
@@ -74,17 +74,17 @@ if __name__ == '__main__':
     parser.add_argument("--voc12_root", default="/usr/volume/WSSS/VOCdevkit/VOC2012", type=str)
 
     # 数据集划分文件
-    # parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini_fortest.txt", type=str)   # 测试用的小批的训练数据
-    parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt", type=str)
-    parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/val_voc12.txt", type=str)  # 跟phase指定的值要一致
-    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini_fortest.txt", type=str)  # 测试用的小批的训练数据
-    parser.add_argument("--tensorboard_img", default="/usr/volume/WSSS/WSSS_PML/voc12/tensorborad_img.txt", type=str)  # 用来生成tf展示的图片
+    # parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/wsss_pml/voc12/train_voc12_mini_fortest.txt", type=str)   # 测试用的小批的训练数据
+    parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/wsss_pml/voc12/train_aug.txt", type=str)
+    parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/wsss_pml/voc12/val_voc12.txt", type=str)  # 跟phase指定的值要一致
+    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/wsss_pml/voc12/train_voc12_mini_fortest.txt", type=str)  # 测试用的小批的训练数据
+    parser.add_argument("--tensorboard_img", default="/usr/volume/WSSS/wsss_pml/voc12/tensorborad_img.txt", type=str)  # 用来生成tf展示的图片
 
     parser.add_argument("--crop_size", default=448, type=int)
     parser.add_argument("--optimizer", default='poly', type=str)
 
     # patch相关的参数
-    parser.add_argument("--patch_gen", default="randompatch", type=str)   # 4patch randompatch contrastivepatch
+    parser.add_argument("--patch_gen", default="4patch", type=str)   # 4patch randompatch contrastivepatch
     parser.add_argument("--ccrop_alpha", default=0.7, type=float)
     parser.add_argument("--patch_select_close", default=True, type=bool)   # 不选择patches
     parser.add_argument("--patch_select_cri", default="random", type=str)   # fgratio confid fgAndconfid random
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     parser.add_argument("--proposal_padding", default=0, type=float)
     parser.add_argument("--patch_loss_weight", default=0.05, type=float)
 
-    parser.add_argument("--session_name", default="test", type=str)         # train val test
+    parser.add_argument("--session_name", default="base", type=str)         # train val test
     # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-randompatch-fgmid0.5-Sp0.3-noNp10-noNMS-11", type=str)         # train val test
     # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-padding0.25-10patch_randomstart-fgmid0.4-seed7", type=str)         # train val test
     # patch_loss_weight = 0.05
@@ -112,13 +112,13 @@ if __name__ == '__main__':
     parser.add_argument("--out_crf", default=None, type=str)  # 保存条件随机场修正后的out_cam
     # parser.add_argument("--out_crf", default="./out_crf", type=str)
     # parser.add_argument("--out_cam_pred", default="./out_cam_pred_val", type=str)  # 保存每张图片中包括背景类的所有类别的CAM
-    # parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/WSSS_PML/log_CAM_{phase}.txt", type=str)
+    # parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/wsss_pml/log_CAM_{phase}.txt", type=str)
 
     args = parser.parse_args()
     args.interpolate_mode = 'bilinear'  # nearest
 
     # 存放结果的根目录
-    out_root = f"/usr/volume/WSSS/WSSS_PML/result/{args.session_name}/"
+    out_root = f"/usr/volume/WSSS/wsss_pml/result/{args.session_name}/"
     if os.path.exists(out_root):
         shutil.rmtree(out_root)
     os.makedirs(out_root, exist_ok=True)
@@ -149,10 +149,10 @@ if __name__ == '__main__':
 
 
     # 复制主要运行文件
-    copy_files_list = ['/usr/volume/WSSS/WSSS_PML/train_cls_loc_jointly_new.py', 
-                        '/usr/volume/WSSS/WSSS_PML/network/resnet38_cls_ser_jointly_revised_seperatable.py',
-                        '/usr/volume/WSSS/WSSS_PML/tool/RoiPooling_Jointly.py',
-                        '/usr/volume/WSSS/WSSS_PML/tool/pyutils.py']
+    copy_files_list = ['/usr/volume/WSSS/wsss_pml/train_cls_loc_jointly_new.py', 
+                        '/usr/volume/WSSS/wsss_pml/network/resnet38_cls_ser_jointly_revised_seperatable.py',
+                        '/usr/volume/WSSS/wsss_pml/tool/RoiPooling_Jointly.py',
+                        '/usr/volume/WSSS/wsss_pml/tool/pyutils.py']
     for copy_file in copy_files_list: 
         shutil.copy(copy_file, out_root)
 
@@ -399,11 +399,12 @@ if __name__ == '__main__':
             
         print(f"epoch{ep} end!!!!!!!!!!!!!!!!!!!")
 
+        '''
         # ==== 附加内容:统计用于构造triplet的patches总数以及没有负正对的patches总数 ======
-        dir1 = "/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_0.txt"
-        dir2= "/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_1.txt"
-        newname1 = f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_0-epoch{ep}.txt"
-        newname2 = f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_1-epoch{ep}.txt"
+        dir1 = "/usr/volume/WSSS/wsss_pml/somefiles/patchnum_0.txt"
+        dir2= "/usr/volume/WSSS/wsss_pml/somefiles/patchnum_1.txt"
+        newname1 = f"/usr/volume/WSSS/wsss_pml/somefiles/patchnum_0-epoch{ep}.txt"
+        newname2 = f"/usr/volume/WSSS/wsss_pml/somefiles/patchnum_1-epoch{ep}.txt"
         num, num1, num2 = 0, 0, 0
         with open(dir1, 'r') as f:
             for line in f.readlines():
@@ -423,13 +424,14 @@ if __name__ == '__main__':
         npatchnums.append(num1)
         ppatchnums.append(num2)
         # ==== 附加内容:统计用于构造triplet的patches总数以及没有负正对的patches总数 ======
+        '''
 
         ''' 
         # ==== 附加内容:统计随机生成的10个patch的分布情况 ======
-        # dir1 = "/usr/volume/WSSS/WSSS_PML/distances_0.txt"
-        # dir2= "/usr/volume/WSSS/WSSS_PML/distances_1.txt"
-        # newname1 = f"/usr/volume/WSSS/WSSS_PML/distances_0-epoch{ep}.txt"
-        # newname2 = f"/usr/volume/WSSS/WSSS_PML/distances_1-epoch{ep}.txt"
+        # dir1 = "/usr/volume/WSSS/wsss_pml/distances_0.txt"
+        # dir2= "/usr/volume/WSSS/wsss_pml/distances_1.txt"
+        # newname1 = f"/usr/volume/WSSS/wsss_pml/distances_0-epoch{ep}.txt"
+        # newname2 = f"/usr/volume/WSSS/wsss_pml/distances_1-epoch{ep}.txt"
         # dists = []
         # with open(dir1, 'r') as f:
         #     for line in f.readlines():
@@ -447,7 +449,7 @@ if __name__ == '__main__':
         # xticks = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
         # plt.xticks(xticks)
         # plt.grid(alpha=0.4)
-        # plt.savefig(f"/usr/volume/WSSS/WSSS_PML/distances_hist-epoch{ep}.jpg")
+        # plt.savefig(f"/usr/volume/WSSS/wsss_pml/distances_hist-epoch{ep}.jpg")
         # ==== 附加内容:统计随机生成的10个patch的分布情况 ======
         '''
 
@@ -591,15 +593,17 @@ if __name__ == '__main__':
                 if not os.path.exists(visualize_dir):
                     os.mkdir(visualize_dir)
 
-                eval(f"/usr/volume/WSSS/WSSS_PML/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
+                eval(f"/usr/volume/WSSS/wsss_pml/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
                     detail_txt=args.log_infer_cls_detail, visualize_dir=visualize_dir, cams_dir=args.out_cam, \
                         model_name=args.weights, bg_threshold=background_threshold)
                 # 测试用的小批量数据
-                # eval(f"/usr/volume/WSSS/WSSS_PML/voc12/train_mini_fortest.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
+                # eval(f"/usr/volume/WSSS/wsss_pml/voc12/train_mini_fortest.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
                 #     detail_txt=args.log_infer_cls_detail, visualize_dir=visualize_dir, cams_dir=args.out_cam, \
                 #         model_name=args.weights, bg_threshold=background_threshold)
 
     
+    print("Session finished:{}".format(time.ctime(time.time())))
+    '''
     from matplotlib import pyplot as plt
     width=0.3
     x = np.arange(3)
@@ -617,6 +621,7 @@ if __name__ == '__main__':
     for a,b in zip(x3, ppatchnums):
         plt.text(a, b, f"{b}", ha='center', va='bottom', fontsize=7)
     plt.xticks(x, ["epoch0", "epoch1", "epoch2"])
-    plt.savefig(f"/usr/volume/WSSS/WSSS_PML/patches-condition.jpg")
+    plt.savefig(f"/usr/volume/WSSS/wsss_pml/patches-condition.jpg")
 
     print("Session finished:{}".format(time.ctime(time.time())))
+    '''

@@ -239,7 +239,7 @@ class Net(network.resnet38d.Net):
                 # simi_metric[i][j] = self.sigmoid_func(simivale)/0.5-1  # sigmoid超过10就是1，绝大部分都是1
                 simi_metric[i][j] = self.sigmoid_func(simivale-10)
                 # simi_metric[i][j] = self.sigmoid_func(simivale)
-        file_dir = f"/usr/volume/WSSS/WSSS_PML/eulur_simi.txt"
+        file_dir = f"/usr/volume/WSSS/wsss_pml/eulur_simi.txt"
         with open(file_dir, "a") as file:
             file.write(str(simi_metric))
             file.write("\n")
@@ -448,16 +448,17 @@ class Net(network.resnet38d.Net):
 
         pass_neg = 0
         pass_pos = 0
+        device = torch.cuda.current_device()
         for i in range(n):
             # if patch_labels_select[i].item()==100:
             #     continue
 
             if is_same_img:
                 neg_mask= ~mask[i] & img_mask[i]
-                neg_idx=torch.tensor(range(len(neg_mask)))[neg_mask==1]
+                neg_idx=torch.tensor(range(len(neg_mask))).to(device)[neg_mask==1]
             else:
                 neg_mask=~mask[i]
-                neg_idx=torch.tensor(range(len(neg_mask)))[neg_mask==1]
+                neg_idx=torch.tensor(range(len(neg_mask))).to(device)[neg_mask==1]
             an_i = distance[i][neg_mask]
             # an_i = fg_distance[i][neg_idx]
             if an_i.size(0) == 0:
@@ -466,10 +467,10 @@ class Net(network.resnet38d.Net):
 
             if is_same_img:
                 pos_mask= mask[i] & ~img_mask[i] # 这个限制了学习图片之前的同类别相似性
-                pos_idx=torch.tensor(range(len(pos_mask)))[pos_mask==1]
+                pos_idx=torch.tensor(range(len(pos_mask))).to(device)[pos_mask==1]
             else:
                 pos_mask=mask[i]
-                pos_idx=torch.tensor(range(len(pos_mask)))[pos_mask==1]
+                pos_idx=torch.tensor(range(len(pos_mask))).to(device)[pos_mask==1]
             ap_i = distance[i][pos_mask]
             if ap_i.size(0) == 0:
                 pass_pos += 1
@@ -492,19 +493,19 @@ class Net(network.resnet38d.Net):
             # 记录的是三元组中anchor positive negative各自对应的在当前batch的所有patch下的下标
             triplet_info.append((indexs[i], indexs[pos_idx[p_idx]], indexs[neg_idx[n_idx]]))
 
-        
+        '''
         # === 记录用于构造triplet的patches总数以及没有负正对的patches总数 =====
         device = torch.cuda.current_device()
-        with open(f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_{device}.txt", "a") as f:
+        with open(f"/usr/volume/WSSS/wsss_pml/somefiles/patchnum_{device}.txt", "a") as f:
             f.write(f"{n} ") 
             
-        with open(f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_{device}.txt", "a") as f:
+        with open(f"/usr/volume/WSSS/wsss_pml/somefiles/patchnum_{device}.txt", "a") as f:
             f.write(f"{pass_neg} ") 
             
-        with open(f"/usr/volume/WSSS/WSSS_PML/somefiles/patchnum_{device}.txt", "a") as f:
+        with open(f"/usr/volume/WSSS/wsss_pml/somefiles/patchnum_{device}.txt", "a") as f:
             f.write(f"{pass_pos}\n") 
         # === 记录用于构造triplet的patches总数以及没有负正对的patches总数 =====
-
+        '''
         '''
         # TODO: 还没完成的一些选triplet的尝试
         # for i in range(n):
@@ -659,7 +660,7 @@ class Net(network.resnet38d.Net):
 
                 patch_metric_loss, patch_embs, patch_labels, patch_mask\
                     =self.patch_based_metric_loss(img, x_patch, label, np.array(bboxes), np.array(bbxs_cls), \
-                            np.array(bbxs_img), is_same_img=True, is_hard_negative=True, epoch_iter=epoch_iter, \
+                            np.array(bbxs_img), is_same_img=False, is_hard_negative=True, epoch_iter=epoch_iter, \
                             img_names=img_names, args=args)
 
                 # patch_metric_loss=self.patch_based_metric_loss_cam(x2, label, is_same_img=True)

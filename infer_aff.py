@@ -59,17 +59,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # parser.add_argument("--weights", default="/home/chenkeke/project/WSSS/Aff_f22_RLL_only_neutral_/save_checkpoints_aff/cam_pml/4_24.pth", type=str)
     # parser.add_argument("--out_rw", default='./out_pseudo_labels_neutral/train_aug/4_24/8_6_crf/', type=str)
-    # parser.add_argument("--cam_dir", default="/usr/volume/WSSS/WSSS_PML/out_cam", type=str)
+    # parser.add_argument("--cam_dir", default="/usr/volume/WSSS/wsss_pml/out_cam", type=str)
 
     # affinitynet模型和参数
     parser.add_argument("--network", default="network.resnet38_aff", type=str)
-    parser.add_argument("--weights", default="/usr/volume/WSSS/WSSS_PML/saved_checkpoints_aff/4_24.pth", type=str)
+    parser.add_argument("--weights", default="/usr/volume/WSSS/wsss_pml/saved_checkpoints_aff/4_24.pth", type=str)
 
     # 输出文件
     parser.add_argument("--out_rw", default='./out_pseudo_labels_alpha/train/4_24/8_6_6/', type=str)
 
     # 要处理的cam
-    parser.add_argument("--cam_dir", default="/usr/volume/WSSS/WSSS_PML/out_cam", type=str)
+    parser.add_argument("--cam_dir", default="/usr/volume/WSSS/wsss_pml/out_cam", type=str)
     # #
     # parser.add_argument("--weights", default="/home/chenkeke/project/WSSS/weights_released/res38_aff.pth", type=str)
     # parser.add_argument("--out_rw", default='./out_pseudo_labels/train/cam/rw_bg_19', type=str)

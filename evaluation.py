@@ -267,12 +267,12 @@ def eval(voc_list_txt, pred_dir, gt_dir='/usr/volume/WSSS/VOCdevkit/VOC2012/Segm
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--predict_dir", default='/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05/out_cam/0.23', type=str)
+    parser.add_argument("--predict_dir", default='/usr/volume/WSSS/wsss_pml/result/e5-patch_weight0.05/out_cam/0.23', type=str)
 
-    parser.add_argument("--list", default='/usr/volume/WSSS/WSSS_PML/voc12/val.txt', type=str)
+    parser.add_argument("--list", default='/usr/volume/WSSS/wsss_pml/voc12/val.txt', type=str)
     parser.add_argument("--gt_dir", default='/usr/volume/WSSS/VOCdevkit/VOC2012/SegmentationClass', type=str)
-    parser.add_argument('--logfile', default='/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05/saved_checkpoints/log_txt/evallog.txt',type=str)
-    parser.add_argument('--logfile_detail', default='/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05/saved_checkpoints/log_txt/evallog1.txt',type=str)
+    parser.add_argument('--logfile', default='/usr/volume/WSSS/wsss_pml/result/e5-patch_weight0.05/saved_checkpoints/log_txt/evallog.txt',type=str)
+    parser.add_argument('--logfile_detail', default='/usr/volume/WSSS/wsss_pml/result/e5-patch_weight0.05/saved_checkpoints/log_txt/evallog1.txt',type=str)
     parser.add_argument('--comment', default='', type=str)
     args = parser.parse_args()
 
@@ -281,9 +281,9 @@ if __name__ == '__main__':
     # name_list = name_list[np.random.choice(range(len(name_list)), 100)]  # 只取一部分，加快速度
     # bg_thres = 0.15
     bg_thresh=[0.15,0.16,0.17,0.18,0.19,0.20,0.21,0.22,0.23,0.24,0.25,0.26,0.27,0.28,0.29,0.30]
-    visualize_dir = "/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05-all-patchscale4-confidback0.5-nohards1/visualization/epoch0"
-    cams_dir="/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05-all-patchscale4-confidback0.5-nohards1/out_cams"
-    pre_dir_root = "/usr/volume/WSSS/WSSS_PML/result/e5-patch_weight0.05-all-patchscale4-confidback0.5-nohards1/out_cam_pre/epoch0"
+    visualize_dir = "/usr/volume/WSSS/wsss_pml/result/e5-patch_weight0.05-all-patchscale4-confidback0.5-nohards1/visualization/epoch0"
+    cams_dir="/usr/volume/WSSS/wsss_pml/result/e5-patch_weight0.05-all-patchscale4-confidback0.5-nohards1/out_cams"
+    pre_dir_root = "/usr/volume/WSSS/wsss_pml/result/e5-patch_weight0.05-all-patchscale4-confidback0.5-nohards1/out_cam_pre/epoch0"
     # loglist, detaillist = do_python_eval(args.predict_dir, args.gt_dir, name_list, 21, bg_thres)
     # writelog(args.logfile, loglist, args.comment, bg_thres)
     # writedictJson(args.logfile_detail, detaillist)

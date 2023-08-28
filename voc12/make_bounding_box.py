@@ -53,7 +53,7 @@ def display(objBox,pic):
 
 
 if __name__== '__main__':
-    train_file_path = "/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt"
+    train_file_path = "/usr/volume/WSSS/wsss_pml/voc12/train_aug.txt"
     train_aug_file = open(train_file_path, "r")
     bounding_box_list = {}
     for line in train_aug_file.readlines():
@@ -61,7 +61,7 @@ if __name__== '__main__':
         ObjBndBoxSet=GetAnnotBoxLoc(os.path.join('/usr/volume/WSSS/VOCdevkit/VOC2012/Annotations','%s.xml'%line))
         bounding_box_list[line] = ObjBndBoxSet
 
-    val_file_path = "/usr/volume/WSSS/WSSS_PML/voc12/val_voc12.txt"
+    val_file_path = "/usr/volume/WSSS/wsss_pml/voc12/val_voc12.txt"
     val_file = open(val_file_path, "r")
     for line in val_file.readlines():
         line = line[12:23]

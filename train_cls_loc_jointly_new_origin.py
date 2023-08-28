@@ -76,11 +76,11 @@ if __name__ == '__main__':
     parser.add_argument("--voc12_root", default="/usr/volume/WSSS/VOCdevkit/VOC2012", type=str)
 
     # 数据集划分文件
-    # parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini_fortest.txt", type=str)   # 测试用的小批的训练数据
-    parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/WSSS_PML/voc12/train_aug.txt", type=str)
-    parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/val_voc12.txt", type=str)  # 跟phase指定的值要一致
-    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/WSSS_PML/voc12/train_voc12_mini_fortest.txt", type=str)  # 测试用的小批的训练数据
-    parser.add_argument("--tensorboard_img", default="/usr/volume/WSSS/WSSS_PML/voc12/tensorborad_img.txt", type=str)  # 用来生成tf展示的图片
+    # parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/wsss_pml/voc12/train_voc12_mini_fortest.txt", type=str)   # 测试用的小批的训练数据
+    parser.add_argument("--train_list", "-tr", default="/usr/volume/WSSS/wsss_pml/voc12/train_aug.txt", type=str)
+    parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/wsss_pml/voc12/val_voc12.txt", type=str)  # 跟phase指定的值要一致
+    # parser.add_argument("--infer_list", default=f"/usr/volume/WSSS/wsss_pml/voc12/train_voc12_mini_fortest.txt", type=str)  # 测试用的小批的训练数据
+    parser.add_argument("--tensorboard_img", default="/usr/volume/WSSS/wsss_pml/voc12/tensorborad_img.txt", type=str)  # 用来生成tf展示的图片
 
     parser.add_argument("--crop_size", default=448, type=int)
     parser.add_argument("--optimizer", default='poly', type=str)
@@ -107,12 +107,12 @@ if __name__ == '__main__':
     parser.add_argument("--out_crf", default=None, type=str)  # 保存条件随机场修正后的out_cam
     # parser.add_argument("--out_crf", default="./out_crf", type=str)
     # parser.add_argument("--out_cam_pred", default="./out_cam_pred_val", type=str)  # 保存每张图片中包括背景类的所有类别的CAM
-    # parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/WSSS_PML/log_CAM_{phase}.txt", type=str)
+    # parser.add_argument("--log_infer_cls", default=f"/usr/volume/WSSS/wsss_pml/log_CAM_{phase}.txt", type=str)
 
     args = parser.parse_args()
 
     # 存放结果的根目录
-    out_root = f"/usr/volume/WSSS/WSSS_PML/result/{args.session_name}/"
+    out_root = f"/usr/volume/WSSS/wsss_pml/result/{args.session_name}/"
     if os.path.exists(out_root):
         shutil.rmtree(out_root)
     os.makedirs(out_root, exist_ok=True)
@@ -143,15 +143,15 @@ if __name__ == '__main__':
 
 
     # 复制主要运行文件
-    copy_files_list = ['/usr/volume/WSSS/WSSS_PML/train_cls_loc_jointly_new_origin.py', 
-                        '/usr/volume/WSSS/WSSS_PML/network/resnet38_cls_ser_jointly_revised_seperatable_origin.py',
-                        '/usr/volume/WSSS/WSSS_PML/tool/RoiPooling_Jointly_origin.py']
+    copy_files_list = ['/usr/volume/WSSS/wsss_pml/train_cls_loc_jointly_new_origin.py', 
+                        '/usr/volume/WSSS/wsss_pml/network/resnet38_cls_ser_jointly_revised_seperatable_origin.py',
+                        '/usr/volume/WSSS/wsss_pml/tool/RoiPooling_Jointly_origin.py']
     for copy_file in copy_files_list:
         shutil.copy(copy_file, out_root)
 
     #### train from imagenet params
     # args.session_name="from_imageNet"
-    # args.weights="/usr/volume/WSSS/WSSS_PML/weights/ilsvrc-cls_rna-a1_cls1000_ep-0001.params"
+    # args.weights="/usr/volume/WSSS/wsss_pml/weights/ilsvrc-cls_rna-a1_cls1000_ep-0001.params"
     # args.lr=0.1
     #
     # args.optimizer="poly"
@@ -528,11 +528,11 @@ if __name__ == '__main__':
                 if not os.path.exists(visualize_dir):
                     os.mkdir(visualize_dir)
 
-                eval(f"/usr/volume/WSSS/WSSS_PML/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
+                eval(f"/usr/volume/WSSS/wsss_pml/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
                     detail_txt=args.log_infer_cls_detail, visualize_dir=visualize_dir, cams_dir=args.out_cam, \
                         model_name=args.weights, bg_threshold=background_threshold)
                 # 测试用的小批量数据
-                # eval(f"/usr/volume/WSSS/WSSS_PML/voc12/train_mini_fortest.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
+                # eval(f"/usr/volume/WSSS/wsss_pml/voc12/train_mini_fortest.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
                 #     detail_txt=args.log_infer_cls_detail, visualize_dir=visualize_dir, cams_dir=args.out_cam, \
                 #         model_name=args.weights, bg_threshold=background_threshold)
 
