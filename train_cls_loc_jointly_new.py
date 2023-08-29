@@ -88,15 +88,15 @@ if __name__ == '__main__':
     parser.add_argument("--ccrop_alpha", default=0.7, type=float)
     parser.add_argument("--patch_select_close", default=True, type=bool)   # 不选择patches
     parser.add_argument("--patch_select_cri", default="random", type=str)   # fgratio confid fgAndconfid random
-    parser.add_argument("--patch_select_ratio", default=0.4, type=float)   # 0.3 0.4 0.5
+    parser.add_argument("--patch_select_ratio", default=0.3, type=float)   # 0.3 0.4 0.5
     parser.add_argument("--patch_select_part_fg", default="mid", type=str)   # front mid back
     parser.add_argument("--patch_select_part_confid", default="front", type=str)   # front mid back
     # parser.add_argument("--patch_select_checksimi", default=True, type=bool)   # 选择patches的时候考虑内容相似性
     # parser.add_argument("--patch_select_checksimi_thres", default=0.9, type=float)
     parser.add_argument("--proposal_padding", default=0, type=float)
-    parser.add_argument("--patch_loss_weight", default=0.05, type=float)
+    parser.add_argument("--patch_loss_weight", default=0.2, type=float)
 
-    parser.add_argument("--session_name", default="base", type=str)         # train val test
+    parser.add_argument("--session_name", default="base_patchcls", type=str)         # train val test
     # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-randompatch-fgmid0.5-Sp0.3-noNp10-noNMS-11", type=str)         # train val test
     # parser.add_argument("--session_name", default="e3-patch_weight0.05-all-padding0.25-10patch_randomstart-fgmid0.4-seed7", type=str)         # train val test
     # patch_loss_weight = 0.05
@@ -325,6 +325,7 @@ if __name__ == '__main__':
         # visualize_iter_idxs = np.random.choice(range(ep*len(train_dataset), (ep+1)*len(train_dataset)), 10, replace=False) # 可视化前随机5个iter
         # visualize_iter_idxs = range(0, len(train_dataset))[:10] # 可视化前10个iter
         visualize_iter_idxs = [] # 测试阶段先不用可视化
+        print(f"epoch{ep} start training. Now is:{time.ctime(time.time())}")
         for iter, pack in tqdm(enumerate(train_data_loader)):
 
             name = pack[0]
@@ -397,7 +398,7 @@ if __name__ == '__main__':
                       'lr: %.6f' % (optimizer.param_groups[0]['lr']), flush=True)
                 avg_meter.pop()
             
-        print(f"epoch{ep} end!!!!!!!!!!!!!!!!!!!")
+        print(f"epoch{ep} end!!!!!!!!!!!!!!!!!!! Now is:{time.ctime(time.time())}")
 
         '''
         # ==== 附加内容:统计用于构造triplet的patches总数以及没有负正对的patches总数 ======
@@ -496,13 +497,14 @@ if __name__ == '__main__':
             for background_threshold in bg_thresh:
                 os.makedirs(f"{args.out_cam_pred}/{background_threshold}", exist_ok=True)
 
-        if out_cam is not None:
-            # args.out_cam = f"{out_cam}/epoch{ep}"
-            args.out_cam = f"{out_cam}"
-            if os.path.exists(args.out_cam):
-                shutil.rmtree(args.out_cam)
-            if not os.path.exists(args.out_cam):
-                os.makedirs(args.out_cam)
+        # 为了节省空间，cam不保存，目录也不创建
+        # if out_cam is not None:
+        #     # args.out_cam = f"{out_cam}/epoch{ep}"
+        #     args.out_cam = f"{out_cam}"
+        #     if os.path.exists(args.out_cam):
+        #         shutil.rmtree(args.out_cam)
+        #     if not os.path.exists(args.out_cam):
+        #         os.makedirs(args.out_cam)
 
         if args.out_crf is not None:
             if os.path.exists(args.out_crf):
@@ -587,11 +589,12 @@ if __name__ == '__main__':
                 print(f"background threshold is {background_threshold}")
                 
                 visualize_dir=args.visualize_patch_dir+f"/epoch{ep}"
-                if not os.path.exists(visualize_dir):
-                    os.mkdir(visualize_dir)
-                visualize_dir=visualize_dir+f"/bg_thres_{background_threshold}"
-                if not os.path.exists(visualize_dir):
-                    os.mkdir(visualize_dir)
+                # 为了节省空间，不可视化内容，目录也不创建
+                # if not os.path.exists(visualize_dir):
+                #     os.mkdir(visualize_dir)
+                # visualize_dir=visualize_dir+f"/bg_thres_{background_threshold}"
+                # if not os.path.exists(visualize_dir):
+                #     os.mkdir(visualize_dir)
 
                 eval(f"/usr/volume/WSSS/wsss_pml/voc12/{phase}.txt", f"{args.out_cam_pred}/{background_threshold}", saved_txt=args.log_infer_cls, \
                     detail_txt=args.log_infer_cls_detail, visualize_dir=visualize_dir, cams_dir=args.out_cam, \

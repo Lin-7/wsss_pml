@@ -14,7 +14,7 @@ from tool.ContrastiveCrop import ContrastiveCrop
 
 
 class RoiPooling(Module):
-    def __init__(self, mode='tf', pool_size=(1, 1)):
+    def __init__(self, mode='tf', pool_size=(1, 1), cls_layer=None):
         """
         tf: (height, width, channels)
         th: (channels, height, width)
@@ -25,6 +25,7 @@ class RoiPooling(Module):
 
         self.mode = mode
         self.pool_size = pool_size
+        self.cls_layer = cls_layer
 
     def pool_region_ori(self, region):
 
@@ -61,12 +62,14 @@ class RoiPooling(Module):
                 #     continue
                 if self.mode=='tf':
                     # pool[i, j, :] = np.max(region[ymin:ymax, xmin:xmax, :], axis=(0,1))
-                    pool[i,j,:] = F.adaptive_avg_pool2d(region[ymin:ymax, xmin:xmax, :], (1,1))
+                    region_var = region[ymin:ymax, xmin:xmax, :]
+                    region_cam = self.cls_layer(region_var)
+                    pool[i,j,:] = F.adaptive_avg_pool2d(region_cam, (1,1))
                     # pool[i, j, :] = F.adaptive_max_pool2d(region[ymin:ymax, xmin:xmax, :], (1, 1))
                 elif self.mode=='th':
-
                     region_var = region[:, ymin:ymax, xmin:xmax]
-                    roi_pooled = F.adaptive_avg_pool2d(region_var, (1, 1))
+                    region_cam = self.cls_layer(region_var)
+                    roi_pooled = F.adaptive_avg_pool2d(region_cam, (1, 1))
 
         return roi_pooled
 

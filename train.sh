@@ -1,12 +1,47 @@
-#!/bin/sh
+#!/bin/bash
+
+# List of Python scripts to run in serial order along with their arguments
+python_scripts_with_args=(
+    "train_cls_loc_jointly_new.py --session_name=fgfrontselect0.3-patchweight0.2 --patch_select_cri=fgratio --patch_select_part_fg=front"
+    "train_cls_loc_jointly_new.py --session_name=fgbackselect0.3-patchweight0.2 --patch_select_cri=fgratio --patch_select_part_fg=back"
+    "train_cls_loc_jointly_new.py --session_name=confidmidselect0.3-patchweight0.2 --patch_select_cri=confid --patch_select_part_fg=mid"
+    "train_cls_loc_jointly_new.py --session_name=confidfrontselect0.3-patchweight0.2 --patch_select_cri=confid --patch_select_part_fg=front"
+    "train_cls_loc_jointly_new.py --session_name=confidbackselect0.3-patchweight0.2 --patch_select_cri=confid --patch_select_part_fg=back"
+)
+
+# Loop through the scripts and run them one by one with arguments
+for script_with_args in "${python_scripts_with_args[@]}"; do
+    script="${script_with_args%% *}"     # Extract the script name
+    args="${script_with_args#* }"        # Extract the arguments after the space
+
+    echo "Running $script with arguments: $args"
+    nohup python "$script" $args &
+    wait
+done
+
+echo "All scripts have been executed."
+
+# nohup python train_cls_loc_jointly_new.py --session_name=fgmidselect0.3-patchweight0.2 \
+#     --patch_select_cri=fgratio --patch_select_ratio=0.3 --patch_select_part_fg=mid &
+
 # 0828
 # nohup python train_cls_loc_jointly_new.py --session_name=base-patchweight0.01 --patch_loss_weight=0.01 2>base-pw0.01 &
 
 # nohup python train_cls_loc_jointly_new.py --session_name=base-patchweight0.1 --patch_loss_weight=0.1 2>base-pw0.1 &
+# sleep 10s
+# nohup python train_cls_loc_jointly_new.py --session_name=randompatch-patchweight0.2 --patch_loss_weight=0.2 \
+#     --max_epoches=3 --patch_gen=randompatch --patch_select_close=True \
+#      0>randompatch-pw0.2.out 1>randompatch-pw0.2.log 2>randompatch-pw0.2.err &
 
-nohup python train_cls_loc_jointly_new.py --session_name=base-patchweight0.2 --patch_loss_weight=0.2 \
-    --max_epoches=3 \
-     1>base-pw0.2.log 2>base-pw0.2.err &
+# # sleep 30s
+# nohup python train_cls_loc_jointly_new.py --session_name=randomselect0.3-patchweight0.2 --patch_loss_weight=0.2 \
+#     --max_epoches=3 --patch_gen=4patch --patch_select_cri=random --patch_select_ratio=0.3  \
+#      0>randomselect0.3-pw0.2.out 1>randomselect0.3-pw0.2.log 2>randomselect0.3-pw0.2.err &
+
+# sleep 30s
+# nohup python train_cls_loc_jointly_new.py --session_name=fgmidselect0.3-patchweight0.2 --patch_loss_weight=0.2 \
+#     --max_epoches=3 --patch_gen=4patch --patch_select_cri=fgratio --patch_select_ratio=0.3 --patch_select_part_fg=mid \
+#      0>fgmidselect0.3-pw0.2.out 1>fgmidselect0.3-pw0.2.log 2>fgmidselect0.3-pw0.2.err &
 
 # # 2.4
 # python train_cls_loc_jointly_new.py --session_name=e3-patch_weight0.05-all-10patch_randomstart-diversity_thres0.9-0.4-seed7-2.10 \

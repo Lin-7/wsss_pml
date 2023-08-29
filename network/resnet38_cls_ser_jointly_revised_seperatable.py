@@ -67,7 +67,7 @@ class Net(network.resnet38d.Net):
     
     def init_roi_pooling_method(self, args):
         if args.patch_gen == "4patch":
-            self.roi_pooling = RoiPooling(mode="th")
+            self.roi_pooling = RoiPooling(mode="th", cls_layer=self.fc8_)
         elif args.patch_gen == "randompatch":
             self.roi_pooling = RoiPoolingRandom(mode="th")
         elif args.patch_gen == "contrastivepatch":
